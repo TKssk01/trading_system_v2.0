@@ -48,6 +48,30 @@ class OrderExecutor:
 
 
 
+    def wait_for_price_change(self, previous_price, fetch_interval=1, timeout=60):
+        """
+        現在の価格が前回の価格から変化するまで待機します。
+        
+        Parameters:
+            previous_price (float): 前回取得した価格
+            fetch_interval (int): 価格を取得する間隔（秒）
+            timeout (int): 待機のタイムアウト時間（秒）
+        
+        Returns:
+            float: 変化後の新しい価格
+            bool: 変化が検知されたかどうか
+        """
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            current_price = self.trading_data.fetch_current_price()
+            if current_price != previous_price:
+                return current_price, True
+            time.sleep(fetch_interval)
+        return previous_price, False
+
+
+
+
 
 
 
@@ -121,73 +145,87 @@ class OrderExecutor:
                 response = self.margin_new_reverse_limit_order(SIDE_SELL, quantity, order_price)
                 
 
-        # 2. 市場価格の変動を検知
-        current_price = self.trading_data.fetch_current_price()
+        # 2. 市場価格の変動を検知（修正後）
         previous_price = self.trading_data.get_previous_price()
-        price_change = current_price - previous_price
+        fetch_interval = 1  # 秒
+        timeout = 60  # 秒
+        price_threshold = 0.1  # 価格変動の閾値（例: 0.1円）
 
-        # 価格変動の閾値（例: 0.1円）
-        price_threshold = 0.1
+        # 価格が変動するまで待機
+        new_price, price_changed = self.wait_for_price_change(previous_price, fetch_interval, timeout)
 
-        if abs(price_change) >= price_threshold:
-            # 新規シグナルを発行
+        if price_changed:
+            price_change = new_price - previous_price
+            print(f"価格が変動しました。前回価格: {previous_price}, 新価格: {new_price}, 変動額: {price_change}")
 
-            # 最新の2つの注文を取得
-            params = {'product': 2, 'details': 'false'}
-            latest_orders_response = self.get_orders(params=params, limit=2)
-            if latest_orders_response:
-                # latest_orders_responseがリストでない場合はリストに変換
-                latest_orders = latest_orders_response if isinstance(latest_orders_response, list) else [latest_orders_response]
-            else:
-                latest_orders = []
+            # 価格変動の閾値を確認
+            if abs(price_change) >= price_threshold:
+                # 新規シグナルを発行
 
-            # シグナルを同時に発行
-            if price_change > 0:
-                # 売り方向の変動
-                self.trading_data.set_signal('reverse_sell_repayment', 1)
+                # 最新の2つの注文を取得
+                params = {'product': 2, 'details': 'false'}
+                latest_orders_response = self.get_orders(params=params, limit=2)
+                if latest_orders_response:
+                    # latest_orders_responseがリストでない場合はリストに変換
+                    latest_orders = latest_orders_response if isinstance(latest_orders_response, list) else [latest_orders_response]
+                else:
+                    latest_orders = []
 
-                # 最新の2つの注文をキャンセル
-                for order in latest_orders:
-                    order_id = order.get('OrderID')
-                    order_side = order.get('Side')  # '1' = 売, '2' = 買 と仮定
-                    if order_side == SIDE_SELL and order_id:
-                        self.cancel_order(order_id)
-                        self.trading_data.reset_signals(current_index)  # current_indexが未定義のためNoneを渡す
-                    elif order_side == SIDE_BUY and order_id:
-                        self.cancel_order(order_id)
-                        self.trading_data.reset_signals(current_index)
-
-            elif price_change < 0:
-                # 買い方向の変動
-                self.trading_data.set_signal('reverse_buy_repayment', 1)
-
-                # 最新の2つの注文をキャンセル
-                for order in latest_orders:
-                    order_id = order.get('OrderID')
-                    order_side = order.get('Side')  # '1' = 売, '2' = 買 と仮定
-                    if order_side == SIDE_BUY and order_id:
-                        self.cancel_order(order_id)
-                        self.trading_data.reset_signals(current_index)
-                    elif order_side == SIDE_SELL and order_id:
-                        self.cancel_order(order_id)
-                        self.trading_data.reset_signals(current_index)
-
-                # 価格変動後のシグナルの評価
+                # シグナルを同時に発行
                 if price_change > 0:
-                    pass  # 価格が上昇方向に変動しました。売りシグナルを継続します。
+                    # 売り方向の変動
+                    self.trading_data.set_signal('reverse_sell_repayment', 1)
+
+                    # 最新の2つの注文をキャンセル
+                    for order in latest_orders:
+                        order_id = order.get('OrderID')
+                        order_side = order.get('Side')  # '1' = 売, '2' = 買 と仮定
+                        if order_side == SIDE_SELL and order_id:
+                            self.cancel_order(order_id)
+                            self.trading_data.reset_signals(current_index=None)  # current_indexが未定義の場合はNoneを渡す
+                        elif order_side == SIDE_BUY and order_id:
+                            self.cancel_order(order_id)
+                            self.trading_data.reset_signals(current_index=None)
+
                 elif price_change < 0:
-                    self.trading_data.set_signal('reverse_buy_repayment', 0)
-                    if latest_orders and 'OrderID' in latest_orders[0]:
-                        self.cancel_order(latest_orders[0].get('OrderID'))
-                    self.trading_data.reset_signals(current_index)
+                    # 買い方向の変動
+                    self.trading_data.set_signal('reverse_buy_repayment', 1)
 
-                # 価格のさらなる変動をチェック
-                new_price = self.trading_data.fetch_current_price()
+                    # 最新の2つの注文をキャンセル
+                    for order in latest_orders:
+                        order_id = order.get('OrderID')
+                        order_side = order.get('Side')  # '1' = 売, '2' = 買 と仮定
+                        if order_side == SIDE_BUY and order_id:
+                            self.cancel_order(order_id)
+                            self.trading_data.reset_signals(current_index=None)
+                        elif order_side == SIDE_SELL and order_id:
+                            self.cancel_order(order_id)
+                            self.trading_data.reset_signals(current_index=None)
 
-                if new_price > current_price:
-                    pass  # 価格がさらに上昇しました。既存のシステムに制御を委ねます。
-                elif new_price < current_price:
-                    pass  # 価格がさらに下降しました。新しい売買シグナルを発行します。
+                    # 価格変動後のシグナルの評価
+                    if price_change > 0:
+                        pass  # 価格が上昇方向に変動しました。売りシグナルを継続します。
+                    elif price_change < 0:
+                        self.trading_data.set_signal('reverse_buy_repayment', 0)
+                        if latest_orders and 'OrderID' in latest_orders[0]:
+                            self.cancel_order(latest_orders[0].get('OrderID'))
+                        self.trading_data.reset_signals(current_index=None)
+
+                    # 価格のさらなる変動をチェック
+                    new_new_price = self.trading_data.fetch_current_price()
+
+                    if new_new_price > new_price:
+                        pass  # 価格がさらに上昇しました。既存のシステムに制御を委ねます。
+                    elif new_new_price < new_price:
+                        pass  # 価格がさらに下降しました。新しい売買シグナルを発行します。
+        else:
+            print(f"価格変動が検知されませんでした。タイムアウト ({timeout}秒) に達しました。")
+
+
+
+
+
+
 
         # エグジットシグナルの処理（信用売りの買い戻し） - IOC 指値注文
         if sell_exit_signal == 1 and (side == "1" and total_qty['sell'] == 100):
