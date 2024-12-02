@@ -28,8 +28,9 @@ class TradingData:
 
         # 列の定義
         self.signal_columns = [
-            'buy_signals', 'buy_exit_signals',
-            'sell_signals', 'sell_exit_signals',
+            'buy_signals', 'sell_signals',
+            'buy_exit_signals', 'buy_exit_signals_lc',
+            'sell_exit_signals', 'sell_exit_signals_lc'
             'hedge_buy_signals', 'hedge_buy_exit_signals',
             'hedge_sell_signals', 'hedge_sell_exit_signals',
             'emergency_buy_exit_signals', 'emergency_sell_exit_signals',
@@ -84,6 +85,7 @@ class TradingData:
                     'hedge_buy_signals', 'hedge_sell_signals',
                     'special_buy_signals','special_sell_signals',
                     'sell_exit_signals','buy_exit_signals',
+                    'sell_exit_signals_lc','buy_exit_signals_lc',
                     'emergency_buy_exit_signals', 'emergency_sell_exit_signals',
                     'hedge_buy_exit_signals', 'hedge_sell_exit_signals',
                     'special_buy_exit_signals','special_sell_exit_signals',
@@ -113,6 +115,10 @@ class TradingData:
             # Log an error if 'interpolated_data' does not exist or is empty
             self.init.logger.error("データフレーム 'interpolated_data' が存在しないか、空です。")
 
+        print("entry_price")
+        print(self.init.entry_price)
+        print("")
+        
         print("buy_entry_price")
         print(self.init.buy_entry_price)
         print("")
@@ -138,6 +144,18 @@ class TradingData:
         print("")
 
         print("signal_position")
+        print(self.init.signal_position)
+        print("")
+        
+        print("signal_position1_prev2")
+        print(self.init.signal_position_prev2)
+        print("")
+
+        print("signal_position1_prev")
+        print(self.init.signal_position_prev)
+        print("")
+
+        print("signal_position1")
         print(self.init.signal_position)
         print("")
         
@@ -199,6 +217,51 @@ class TradingData:
                 print(f"{current} を {prev} の値でリセットしました。")
             else:
                 print(f"属性 {current} または {prev} が存在しません。")
+                
+    def reset_signals1(self, index):
+        # リセットするシグナル列をリスト化
+        signal_columns = [
+            'buy_signals',
+            'buy_exit_signals',
+            'hedge_buy_exit_signals',
+            'special_buy_exit_signals',
+            'sell_signals',
+            'hedge_sell_signals',
+            'sell_exit_signals',
+            'special_sell_exit_signals'     
+        ]
+
+        # データフレームに存在するシグナル列のみを選択
+        existing_signal_columns = [col for col in signal_columns if col in self.init.interpolated_data.columns]
+
+        if existing_signal_columns:
+            # 指定されたインデックスのシグナル列を0にリセット
+            self.init.interpolated_data.loc[index, existing_signal_columns] = 0
+            self.init.interpolated_data.loc[index, existing_signal_columns] = 0
+            print(f"インデックス {index} のシグナルをリセットしました。")
+        else:
+            print("リセット対象のシグナル列が見つかりませんでした。")
+
+        # 前回の値を現在の値に戻す
+        reset_variables = [
+            ('special_sell_active', 'special_sell_active_prev'),
+            ('special_buy_active', 'special_buy_active_prev'),
+            ('buy_entry_price', 'buy_entry_price_prev'),
+            ('sell_entry_price', 'sell_entry_price_prev'),
+            ('cumulative_score', 'cumulative_score_prev'),
+            ('previous_cumulative_score', 'previous_cumulative_score_prev'),
+            ('special_entry_price', 'special_entry_price_prev'),
+            ('original_entry_price', 'original_entry_price_prev'),
+            ('signal_position1', 'signal_position1_prev'),
+            ('signal_position2', 'signal_position2_prev'),
+        ]
+
+        for current, prev in reset_variables:
+            if hasattr(self.init, current) and hasattr(self.init, prev):
+                setattr(self.init, current, getattr(self.init, prev))
+                print(f"{current} を {prev} の値でリセットしました。")
+            else:
+                print(f"属性 {current} または {prev} が存在しません。")
     
     def reset_signals_2(self, index):
         # リセットするシグナル列をリスト化
@@ -235,6 +298,51 @@ class TradingData:
             ('special_entry_price', 'special_entry_price_prev'),
             ('original_entry_price', 'original_entry_price_prev'),
             ('signal_position', 'signal_position_prev2'),
+            ('signal_position2', 'signal_position2_prev2'),
+        ]
+
+        for current, prev in reset_variables:
+            if hasattr(self.init, current) and hasattr(self.init, prev):
+                setattr(self.init, current, getattr(self.init, prev))
+                print(f"{current} を {prev} の値でリセットしました。")
+            else:
+                print(f"属性 {current} または {prev} が存在しません。")
+                
+    def reset_signals1_2(self, index):
+        # リセットするシグナル列をリスト化
+        signal_columns = [
+            'buy_signals',
+            'buy_exit_signals',
+            'hedge_buy_exit_signals',
+            'special_buy_exit_signals',
+            'sell_signals',
+            'sell_exit_signals',
+            'hedge_sell_exit_signals',
+            'special_sell_exit_signals'
+        ]
+
+        # データフレームに存在するシグナル列のみを選択
+        existing_signal_columns = [col for col in signal_columns if col in self.init.interpolated_data.columns]
+
+        if existing_signal_columns:
+            # 指定されたインデックスのシグナル列を0にリセット
+            self.init.interpolated_data.loc[index, existing_signal_columns] = 0
+            self.init.interpolated_data.loc[index, existing_signal_columns] = 0
+            print(f"インデックス {index} のシグナルをリセットしました。")
+        else:
+            print("リセット対象のシグナル列が見つかりませんでした。")
+
+        # 前回の値を現在の値に戻す
+        reset_variables = [
+            ('special_sell_active', 'special_sell_active_prev'),
+            ('special_buy_active', 'special_buy_active_prev'),
+            ('buy_entry_price', 'buy_entry_price_prev'),
+            ('sell_entry_price', 'sell_entry_price_prev'),
+            ('cumulative_score', 'cumulative_score_prev'),
+            ('previous_cumulative_score', 'previous_cumulative_score_prev'),
+            ('special_entry_price', 'special_entry_price_prev'),
+            ('original_entry_price', 'original_entry_price_prev'),
+            ('signal_position1', 'signal_position1_prev2'),
             ('signal_position2', 'signal_position2_prev2'),
         ]
 
@@ -627,8 +735,9 @@ class TradingData:
 
             # シグナル列が存在しない場合は初期化
             signal_columns = [
-                'buy_signals', 'buy_exit_signals',
-                'sell_signals', 'sell_exit_signals',
+                'buy_signals', 'sell_signals'
+                'buy_exit_signals', 'sell_exit_signals',
+                'buy_exit_signals_lc', 'sell_exit_signals_lc',
                 'hedge_buy_signals', 'hedge_buy_exit_signals',
                 'hedge_sell_signals', 'hedge_sell_exit_signals',
                 'emergency_buy_exit_signals', 'emergency_sell_exit_signals',
@@ -761,8 +870,11 @@ class TradingData:
         self.init.special_buy_active_prev = self.init.special_buy_active
         self.init.signal_position_prev = self.init.signal_position
         self.init.signal_position_prev2 = self.init.signal_position_prev
+        self.init.signal_position1_prev = self.init.signal_position1
+        self.init.signal_position1_prev2 = self.init.signal_position1_prev
         self.init.signal_position2_prev = self.init.signal_position2
         self.init.signal_position2_prev2 = self.init.signal_position2_prev
+        self.init.entry_price_prev = self.init.entry_price
         self.init.buy_entry_price_prev = self.init.buy_entry_price
         self.init.sell_entry_price_prev = self.init.sell_entry_price
         self.init.cumulative_score_prev = self.init.cumulative_score
@@ -772,6 +884,10 @@ class TradingData:
 
         current_index = data.index[-1]
         current_close = data.at[current_index, 'close']
+        
+        current_index_prev = data.index[-2]
+        current_close_prev = data.at[current_index_prev, 'close']
+        
         print("current_index")
         print(current_index)
         print("current_close")
@@ -785,8 +901,9 @@ class TradingData:
 
         # シグナル列の存在確認と初期化
         signal_columns = [
-            'buy_signals', 'buy_exit_signals',
-            'sell_signals', 'sell_exit_signals',
+            'buy_signals', 'sell_signals',
+            'buy_exit_signals', 'sell_exit_signals',
+            'buy_exit_signals_lc', 'sell_exit_signals_lc',
             'emergency_buy_exit_signals', 'emergency_sell_exit_signals',
             'hedge_buy_signals', 'hedge_buy_exit_signals',
             'hedge_sell_signals', 'hedge_sell_exit_signals',
@@ -1011,11 +1128,72 @@ class TradingData:
             # position = self.init.signal_position
 
             # シグナルの生成
+            if self.init.signal_position == 'sell' and self.init.signal_position1 == 'buy' and \
+                current_close != self.init.entry_price:
+                    data.at[current_index, 'sell_exit_signals_lc'], data.at[current_index, 'buy_exit_signals_lc'] = 1, 1
+                    self.init.signal_position, self.init.signal_position1 = None, None
+                    self.init.sell_entry_price, self.init.buy_entry_price = current_close, current_close
+            
+            if self.init.signal_position == 'buy' and self.init.signal_position1 == 'sell' and \
+                current_close != self.init.entry_price:
+                    data.at[current_index, 'buy_exit_signals_lc'], data.at[current_index, 'sell_exit_signals_lc'] = 1, 1
+                    self.init.signal_position, self.init.signal_position1 = None, None
+                    self.init.sell_entry_price, self.init.buy_entry_price = current_close, current_close
+            
+            if self.init.signal_position == 'sell' and self.init.signal_position1 is None and \
+                current_close == self.init.entry_price and current_close > current_close_prev:
+                    data.at[current_index, 'buy_signals'] = 1
+                    self.init.signal_position1 = 'buy'
+                    self.init.entry_price = current_close
+                    self.init.position_entry_index = len(self.init.interpolated_data)
+            
+            if self.init.signal_position == 'buy' and self.init.signal_position1 is None and \
+                current_close == self.init.entry_price and current_close < current_close_prev:
+                    data.at[current_index, 'sell_signals'] = 1
+                    self.init.signal_position1 = 'sell'
+                    self.init.entry_price = current_close
+                    self.init.position_entry_index = len(self.init.interpolated_data)
+                    
+            if self.init.signal_position is None and self.init.signal_position1 == 'sell' and \
+                current_close == self.init.entry_price and current_close > current_close_prev:
+                    data.at[current_index, 'buy_signals'] = 1
+                    self.init.signal_position = 'buy'
+                    self.init.entry_price = current_close
+                    self.init.position_entry_index = len(self.init.interpolated_data)
+            
+            if self.init.signal_position is None and self.init.signal_position1 == 'buy' and \
+                current_close == self.init.entry_price and current_close < current_close_prev:
+                    data.at[current_index, 'sell_signals'] = 1
+                    self.init.signal_position = 'sell'
+                    self.init.entry_price = current_close
+                    self.init.position_entry_index = len(self.init.interpolated_data)
+            
+            # if self.init.signal_position == 'sell' and self.init.signal_position1 == 'buy':
+            #     if current_close > self.init.entry_price:
+            #         data.at[current_index, 'sell_exit_signals_lc'] = 1
+            #         self.init.signal_position = None
+            #         self.init.buy_entry_price = current_close
+            #     if current_close < self.init.entry_price:
+            #         data.at[current_index, 'buy_exit_signals_lc'] = 1
+            #         self.init.signal_position1 = None
+            #         self.init.sell_entry_price = current_close
+                    
+            # if self.init.signal_position == 'buy' and self.init.signal_position1 == 'sell':
+            #     if current_close < self.init.entry_price:
+            #         data.at[current_index, 'buy_exit_signals_lc'] = 1
+            #         self.init.signal_position = None
+            #         self.init.sell_entry_price = current_close
+            #     if current_close > self.init.entry_price:
+            #         data.at[current_index, 'sell_exit_signals_lc'] = 1
+            #         self.init.signal_position1 = None
+            #         self.init.buy_entry_price = current_close
+                    
+            
             if not self.init.swap_signals:
                 if data.at[current_index, 'adx_difference_diff'] > 0 or data.at[current_index, 'band_width_diff'] > 0:
                     if (trend_positive1 or trend_positive2) and \
                     (hist_crossover_up1 or hist_crossover_up2 or close_crosses_above1 or close_crosses_above2):
-                        if self.init.signal_position == 'sell':
+                        if self.init.signal_position == 'sell' and self.init.signal_position1 is None:
                             # Sell Exit Signal Logic with price condition
                             if current_close < self.init.sell_entry_price:
                                 data.at[current_index, 'sell_exit_signals'] = 1
@@ -1023,7 +1201,7 @@ class TradingData:
                                 # self.init.sell_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1032,9 +1210,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.buy_entry_price = current_close
-                                data.at[current_index, 'buy_signals'] = 1
-                                self.init.signal_position = 'buy'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                    
+                            elif current_close == self.init.sell_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close > self.init.sell_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position1 =='sell':
+                            # Sell Exit Signal Logic with price condition
+                            if current_close < self.init.sell_entry_price:
+                                data.at[current_index, 'sell_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.sell_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_buy':  
+                                    data.at[current_index, 'hedge_buy_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1054,15 +1271,16 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None and data.at[current_index, 'sell_exit_signals'] != 1:
-                            data.at[current_index, 'buy_signals'] = 1
-                            self.init.signal_position = 'buy'
-                            self.init.buy_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'sell_exit_signals'] != 1 and data.at[current_index, 'buy_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
                     elif (trend_negative1 or trend_negative2) and \
                     (hist_crossover_down1 or hist_crossover_down2 or close_crosses_below1 or close_crosses_below2):
-                        if self.init.signal_position == 'buy':
+                        if self.init.signal_position == 'buy' and self.init.signal_position1 is None:
                             # Buy Exit Signal Logic with price condition
                             if current_close > self.init.buy_entry_price:
                                 data.at[current_index, 'buy_exit_signals'] = 1
@@ -1070,7 +1288,7 @@ class TradingData:
                                 # self.init.buy_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1079,9 +1297,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.sell_entry_price = current_close
-                                data.at[current_index, 'sell_signals'] = 1
-                                self.init.signal_position = 'sell'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close == self.init.buy_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close < self.init.buy_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position1 == 'buy':
+                            # Buy Exit Signal Logic with price condition
+                            if current_close > self.init.buy_entry_price:
+                                data.at[current_index, 'buy_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.buy_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_sell':
+                                    data.at[current_index, 'hedge_sell_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1101,16 +1358,17 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None and data.at[current_index, 'buy_exit_signals'] != 1:
-                            data.at[current_index, 'sell_signals'] = 1
-                            self.init.signal_position = 'sell'
-                            self.init.sell_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'buy_exit_signals'] != 1 and data.at[current_index, 'sell_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
                 elif data.at[current_index, 'adx_difference_diff'] < 0 and data.at[current_index, 'band_width_diff'] < 0:
                     if (trend_positive1 or trend_positive2) and \
                     (hist_crossover_up1 or hist_crossover_up2 or close_crosses_below1 or close_crosses_below2):
-                        if self.init.signal_position == 'sell':
+                        if self.init.signal_position == 'sell' and self.init.signal_position1 is None:
                             # Sell Exit Signal Logic with price condition
                             if current_close < self.init.sell_entry_price:
                                 data.at[current_index, 'sell_exit_signals'] = 1
@@ -1118,7 +1376,7 @@ class TradingData:
                                 # self.init.sell_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1127,9 +1385,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.buy_entry_price = current_close
-                                data.at[current_index, 'buy_signals'] = 1
-                                self.init.signal_position = 'buy'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close == self.init.sell_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close > self.init.sell_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position1 == 'sell':
+                            # Sell Exit Signal Logic with price condition
+                            if current_close < self.init.sell_entry_price:
+                                data.at[current_index, 'sell_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.sell_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_buy': 
+                                    data.at[current_index, 'hedge_buy_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1149,15 +1446,16 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None and data.at[current_index, 'sell_exit_signals'] != 1:
-                            data.at[current_index, 'buy_signals'] = 1
-                            self.init.signal_position = 'buy'
-                            self.init.buy_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'sell_exit_signals'] != 1 and data.at[current_index, 'buy_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
                     elif (trend_negative1 or trend_negative2) and \
                             (hist_crossover_down1 or hist_crossover_down2 or close_crosses_above1 or close_crosses_above2):
-                        if self.init.signal_position == 'buy':
+                        if self.init.signal_position == 'buy' and self.init.signal_position1 is None:
                             # Buy Exit Signal Logic with price condition
                             if current_close > self.init.buy_entry_price:
                                 data.at[current_index, 'buy_exit_signals'] = 1
@@ -1165,7 +1463,7 @@ class TradingData:
                                 # self.init.buy_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1174,9 +1472,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.sell_entry_price = current_close
-                                data.at[current_index, 'sell_signals'] = 1
-                                self.init.signal_position = 'sell'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close == self.init.buy_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close < self.init.buy_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position1 == 'buy':
+                            # Buy Exit Signal Logic with price condition
+                            if current_close > self.init.buy_entry_price:
+                                data.at[current_index, 'buy_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.buy_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_sell':
+                                    data.at[current_index, 'hedge_sell_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1196,10 +1533,11 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None and data.at[current_index, 'buy_exit_signals'] != 1:
-                            data.at[current_index, 'sell_signals'] = 1
-                            self.init.signal_position = 'sell'
-                            self.init.sell_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'buy_exit_signals'] != 1 and data.at[current_index, 'sell_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
             else:
@@ -1207,7 +1545,7 @@ class TradingData:
                 if data.at[current_index, 'adx_difference_diff'] > 0 or data.at[current_index, 'band_width_diff'] > 0:
                     if (trend_positive1 or trend_positive2) and \
                     (hist_crossover_up1 or hist_crossover_up2 or close_crosses_above1 or close_crosses_above2):
-                        if self.init.signal_position == 'buy':
+                        if self.init.signal_position == 'buy' and self.init.signal_position1 is None:
                             # Buy Exit Signal Logic with price condition
                             if current_close > self.init.buy_entry_price:
                                 data.at[current_index, 'buy_exit_signals'] = 1
@@ -1215,7 +1553,7 @@ class TradingData:
                                 # self.init.buy_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1224,9 +1562,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.sell_entry_price = current_close
-                                data.at[current_index, 'sell_signals'] = 1
-                                self.init.signal_position = 'sell'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close == self.init.buy_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close < self.init.buy_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position1 == 'buy':
+                            # Buy Exit Signal Logic with price condition
+                            if current_close > self.init.buy_entry_price:
+                                data.at[current_index, 'buy_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.buy_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_sell':
+                                    data.at[current_index, 'hedge_sell_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1246,15 +1623,16 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None: # and data.at[current_index, 'buy_exit_signals'] != 1:
-                            data.at[current_index, 'sell_signals'] = 1
-                            self.init.signal_position = 'sell'
-                            self.init.sell_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'buy_exit_signals'] != 1 and data.at[current_index, 'sell_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
                     elif (trend_negative1 or trend_negative2) and \
                             (hist_crossover_down1 or hist_crossover_down2 or close_crosses_below1 or close_crosses_below2):
-                        if self.init.signal_position == 'sell':
+                        if self.init.signal_position == 'sell'  and self.init.signal_position1 is None:
                             # Sell Exit Signal Logic with price condition
                             if current_close < self.init.sell_entry_price:
                                 data.at[current_index, 'sell_exit_signals'] = 1
@@ -1262,7 +1640,7 @@ class TradingData:
                                 # self.init.sell_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1271,9 +1649,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.buy_entry_price = current_close
-                                data.at[current_index, 'buy_signals'] = 1
-                                self.init.signal_position = 'buy'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close == self.init.sell_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close > self.init.sell_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position1 == 'sell':
+                            # Sell Exit Signal Logic with price condition
+                            if current_close < self.init.sell_entry_price:
+                                data.at[current_index, 'sell_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.sell_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_buy':
+                                    data.at[current_index, 'hedge_buy_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'] = 1 and data.at[current_index, 'buy_signals'] = 1
+                                self.init.signal_position = 'sell' and self.init.signal_position1 = 'buy'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1293,16 +1710,17 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None and data.at[current_index, 'sell_exit_signals'] != 1:
-                            data.at[current_index, 'buy_signals'] = 1
-                            self.init.signal_position = 'buy'
-                            self.init.buy_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'sell_exit_signals'] != 1 and data.at[current_index, 'buy_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
                 elif data.at[current_index, 'adx_difference_diff'] < 0 and data.at[current_index, 'band_width_diff'] < 0:
                     if (trend_positive1 or trend_positive2) and \
                     (hist_crossover_up1 or hist_crossover_up2 or close_crosses_below1 or close_crosses_below2):
-                        if self.init.signal_position == 'buy':
+                        if self.init.signal_position == 'buy' and self.init.signal_position1 is None:
                             # Buy Exit Signal Logic with price condition
                             if current_close > self.init.buy_entry_price:
                                 data.at[current_index, 'buy_exit_signals'] = 1
@@ -1310,7 +1728,7 @@ class TradingData:
                                 # self.init.buy_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1319,9 +1737,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.sell_entry_price = current_close
-                                data.at[current_index, 'sell_signals'] = 1
-                                self.init.signal_position = 'sell'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close == self.init.buy_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close < self.init.buy_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position1 == 'buy':
+                            # Buy Exit Signal Logic with price condition
+                            if current_close > self.init.buy_entry_price:
+                                data.at[current_index, 'buy_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.buy_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_sell':
+                                    data.at[current_index, 'hedge_sell_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1341,15 +1798,16 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None and data.at[current_index, 'buy_exit_signals'] != 1:
-                            data.at[current_index, 'sell_signals'] = 1
-                            self.init.signal_position = 'sell'
-                            self.init.sell_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'buy_exit_signals'] != 1 and data.at[current_index, 'sell_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
                     elif (trend_negative1 or trend_negative2) and \
                         (hist_crossover_down1 or hist_crossover_down2 or close_crosses_above1 or close_crosses_above2):
-                        if self.init.signal_position == 'sell':
+                        if self.init.signal_position == 'sell' and self.init.signal_position is None:
                             # Sell Exit Signal Logic with price condition
                             if current_close < self.init.sell_entry_price:
                                 data.at[current_index, 'sell_exit_signals'] = 1
@@ -1357,7 +1815,7 @@ class TradingData:
                                 # self.init.sell_entry_price = None
 
                                 # イグジットシグナル直後の値を保持
-                                self.init.signal_position_prev = self.init.signal_position
+                                self.init.signal_position_prev, self.init.signal_position1_prev = self.init.signal_position, self.init.signal_position1
                                 self.init.cumulative_score_prev = self.init.cumulative_score
                                 self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
                                 
@@ -1366,9 +1824,48 @@ class TradingData:
                                     self.init.signal_position2 = None
                                     self.init.signal_position2_prev = self.init.signal_position2
 
-                                self.init.buy_entry_price = current_close
-                                data.at[current_index, 'buy_signals'] = 1
-                                self.init.signal_position = 'buy'
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
+                                self.init.position_entry_index = len(self.init.interpolated_data)
+
+                                # Score calculation
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score += 1
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close == self.init.sell_entry_price:
+                                # Score 0, do not swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+
+                            elif current_close > self.init.sell_entry_price:
+                                # Score -1, swap signals
+                                self.init.previous_cumulative_score = self.init.cumulative_score
+                                self.init.cumulative_score -= 1
+                                self.init.swap_signals = not self.init.swap_signals
+                                data.at[current_index, 'performance'] = self.init.cumulative_score
+                                
+                        if self.init.signal_position is None and self.init.signal_position == 'sell':
+                            # Sell Exit Signal Logic with price condition
+                            if current_close < self.init.sell_entry_price:
+                                data.at[current_index, 'sell_exit_signals'] = 1
+                                self.init.signal_position1 = None
+                                # self.init.sell_entry_price = None
+
+                                # イグジットシグナル直後の値を保持
+                                self.init.signal_position1_prev, self.init.signal_position_prev = self.init.signal_position1, self.init.signal_position
+                                self.init.cumulative_score_prev = self.init.cumulative_score
+                                self.init.previous_cumulative_score_prev = self.init.previous_cumulative_score
+                                
+                                if self.init.signal_position2 == 'hedge_buy':
+                                    data.at[current_index, 'hedge_buy_exit_signals'] = 1
+                                    self.init.signal_position2 = None
+                                    self.init.signal_position2_prev = self.init.signal_position2
+
+                                self.init.entry_price = current_close
+                                data.at[current_index, 'sell_signals'], data.at[current_index, 'buy_signals'] = 1, 1
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation
@@ -1388,10 +1885,11 @@ class TradingData:
                                 self.init.swap_signals = not self.init.swap_signals
                                 data.at[current_index, 'performance'] = self.init.cumulative_score
 
-                        if self.init.signal_position is None and data.at[current_index, 'sell_exit_signals'] != 1:
-                            data.at[current_index, 'buy_signals'] = 1
-                            self.init.signal_position = 'buy'
-                            self.init.buy_entry_price = current_close
+                        if self.init.signal_position is None and self.init.signal_position1 is None and \
+                            data.at[current_index, 'sell_exit_signals'] != 1 and data.at[current_index, 'buy_exit_signals'] != 1:
+                            self.init.entry_price = current_close
+                            data.at[current_index, 'buy_signals'], data.at[current_index, 'sell_signals'] = 1, 1
+                            self.init.signal_position, self.init.signal_position1 = 'buy', 'sell'
                             self.init.position_entry_index = len(self.init.interpolated_data)
 
         # メソッドの最後で現在の状態を前回の状態として更新

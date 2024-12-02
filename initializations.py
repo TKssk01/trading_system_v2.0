@@ -69,11 +69,13 @@ class Initializations:
         # ポジション管理の初期化
         # self.position = None
         self.position_entry_index = None
+        self.entry_price = None
         self.buy_entry_price = None
         self.sell_entry_price = None
 
         # ポジション管理の初期化
         self.position_entry_index_prev = None
+        self.entry_price_prev = None
         self.buy_entry_price_prev = None
         self.sell_entry_price_prev = None
 
@@ -99,9 +101,12 @@ class Initializations:
         self.special_sell_active = False
         self.special_buy_active = False
         self.signal_position = None
+        self.signal_position1 = None
         self.signal_position2 = None
         self.signal_position_prev = None
         self.signal_position_prev2 = None
+        self.signal_position1_prev = None
+        self.signal_position1_prev2 = None
         self.signal_position2_prev = None
         self.signal_position2_prev2 = None
 
