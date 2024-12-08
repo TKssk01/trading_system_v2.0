@@ -85,7 +85,6 @@ class TradingData:
                     'hedge_buy_signals', 'hedge_sell_signals',
                     'special_buy_signals','special_sell_signals',
                     'sell_exit_signals','buy_exit_signals',
-                    'sell_exit_signals_lc','buy_exit_signals_lc',
                     'emergency_buy_exit_signals', 'emergency_sell_exit_signals',
                     'hedge_buy_exit_signals', 'hedge_sell_exit_signals',
                     'special_buy_exit_signals','special_sell_exit_signals',
@@ -115,10 +114,6 @@ class TradingData:
             # Log an error if 'interpolated_data' does not exist or is empty
             self.init.logger.error("データフレーム 'interpolated_data' が存在しないか、空です。")
 
-        print("entry_price")
-        print(self.init.entry_price)
-        print("")
-        
         print("buy_entry_price")
         print(self.init.buy_entry_price)
         print("")
@@ -147,18 +142,6 @@ class TradingData:
         print(self.init.signal_position)
         print("")
         
-        print("signal_position1_prev2")
-        print(self.init.signal_position_prev2)
-        print("")
-
-        print("signal_position1_prev")
-        print(self.init.signal_position_prev)
-        print("")
-
-        print("signal_position1")
-        print(self.init.signal_position)
-        print("")
-        
         print("signal_position2_prev2")
         print(self.init.signal_position2_prev2)
         print("")
@@ -170,7 +153,6 @@ class TradingData:
         print("signal_position2")
         print(self.init.signal_position2)
         print("")
-
         
 
     def reset_signals(self, index):
@@ -1132,7 +1114,7 @@ class TradingData:
                 current_close != self.init.entry_price:
                     data.at[current_index, 'sell_exit_signals_lc'], data.at[current_index, 'buy_exit_signals_lc'] = 1, 1
                     self.init.signal_position, self.init.signal_position1 = None, None
-                    self.init.sell_entry_price, self.init.buy_entry_price = current_close, current_close
+                    self.init.sell_entry_price, self.init.buy_entry_price = current_close
             
             if self.init.signal_position == 'buy' and self.init.signal_position1 == 'sell' and \
                 current_close != self.init.entry_price:
@@ -1689,8 +1671,10 @@ class TradingData:
                                     self.init.signal_position2_prev = self.init.signal_position2
 
                                 self.init.entry_price = current_close
-                                data.at[current_index, 'sell_signals'] = 1 and data.at[current_index, 'buy_signals'] = 1
-                                self.init.signal_position = 'sell' and self.init.signal_position1 = 'buy'
+                                
+                                data.loc[current_index, ['sell_signals', 'buy_signals']] = [1, 1]
+
+                                self.init.signal_position, self.init.signal_position1 = 'sell', 'buy'
                                 self.init.position_entry_index = len(self.init.interpolated_data)
 
                                 # Score calculation

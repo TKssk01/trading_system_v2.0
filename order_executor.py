@@ -86,27 +86,27 @@ class OrderExecutor:
         SIDE_SELL = "1"
 
         # 売りと買いの総数量を辞書で初期化
-        total_qty = {'buy': 0.0, 'sell': 0.0}
+        # total_qty = {'buy': 0.0, 'sell': 0.0}
         # side の初期値を設定
-        side = None 
+        # side = None 
 
         # ポジション情報を取得
-        positions_dict = self.get_positions()
-        # ポジション情報が空かNoneの場合はゼロと見なして処理を続行
-        if not positions_dict:
-            positions_dict = []  # 空のリストとして扱う
+        # positions_dict = self.get_positions()
+        # # ポジション情報が空かNoneの場合はゼロと見なして処理を続行
+        # if not positions_dict:
+        #     positions_dict = []  # 空のリストとして扱う
 
-        # ポジション情報をループして総数量を集計
-        for position in positions_dict:
-            side = position.get('Side')
-            qty = position.get('LeavesQty', 0)
+        # # ポジション情報をループして総数量を集計
+        # for position in positions_dict:
+        #     side = position.get('Side')
+        #     qty = position.get('LeavesQty', 0)
             
-            if side == '2':  # 買い
-                total_qty['buy'] += qty
-            elif side == '1':  # 売り
-                total_qty['sell'] += qty
-            else:
-                print(f"不明なSideのポジションが存在します: {position}")
+        #     if side == '2':  # 買い
+        #         total_qty['buy'] += qty
+        #     elif side == '1':  # 売り
+        #         total_qty['sell'] += qty
+        #     else:
+        #         print(f"不明なSideのポジションが存在します: {position}")
 
         if self.init.interpolated_data is None or self.init.interpolated_data.empty:
             print("補間データが存在しません。注文の実行をスキップします。")
@@ -382,7 +382,7 @@ class OrderExecutor:
                     pass  # 不明なSideの場合は無視
             time.sleep(0.3) 
 
-        # 最後のシグナル処理部分を置き換え
+        
         if (emergency_buy_exit_signal == 1 and (side == "2" and total_qty['buy'] == 100)) or \
            (hedge_buy_exit_signal == 1 and (self.init.signal_position_prev2 == 'hedge_buy' and side == "2" and total_qty['buy'] == 100)) or \
            (special_buy_exit_signal == 1 and (self.init.signal_position_prev == 'special_buy' and side == "2" and total_qty['buy'] == 100)):
