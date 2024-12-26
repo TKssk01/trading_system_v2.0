@@ -111,8 +111,8 @@ class OrderExecutor:
         price_threshold = 0.1  # 価格変動の閾値
 
         # 注文の側面を数値で定義
-        SIDE_BUY = "2"
-        SIDE_SELL = "1"
+        BUY = "2"
+        SELL = "1"
 
         if self.init.interpolated_data is None or self.init.interpolated_data.empty:
             print("補間データが存在しません。注文の実行をスキップします。")
@@ -230,11 +230,6 @@ class OrderExecutor:
         # 基準価格を更新
         self.init.previous_price = new_price
         self.init.logger.info(f"基準価格を更新しました。新価格: {new_price}")
-
-
-
-
-
 
 
 
@@ -594,6 +589,120 @@ class OrderExecutor:
             print(f"[ERROR] 注文履歴の取得中に例外が発生しました: {e}")
             return None
 
+# ================================
+# API パラメータ定義
+# ================================
+
+# 【ヘッダー パラメータ】
+# X-API-KEY (必須, string): トークン発行メソッドで取得した文字列
+
+# 【リクエストボディ スキーマ: application/json】
+# Password (必須, string): 注文パスワード
+# Symbol (必須, string): 銘柄コード
+# Exchange (必須, integer <int32>): 市場コード
+#   定義値:
+#     1: 東証
+#     3: 名証
+#     5: 福証
+#     6: 札証
+# SecurityType (必須, integer <int32>): 商品種別
+#   定義値:
+#     1: 株式
+# Side (必須, string): 売買区分
+#   定義値:
+#     1: 売
+#     2: 買
+# CashMargin (必須, integer <int32>): 信用区分
+#   定義値:
+#     1: 現物
+#     2: 新規
+#     3: 返済
+# MarginTradeType (integer <int32>): 信用取引区分
+#   ※現物取引の場合は指定不要。
+#   ※信用取引の場合、必須。
+#   定義値:
+#     1: 制度信用
+#     2: 一般信用（長期）
+#     3: 一般信用（デイトレ）
+# MarginPremiumUnit (number <double>): 1株あたりのプレミアム料(円)
+#   ※プレミアム料の刻値は、プレミアム料取得APIのレスポンスにある"TickMarginPremium"にて確認。
+#   ※入札受付中(19:30～20:30)プレミアム料入札可能銘柄の場合、「MarginPremiumUnit」は必須。
+#   ※それ以外の場合、「MarginPremiumUnit」の記載は無視。
+#   ※入札受付中以外の時間帯では、「MarginPremiumUnit」の記載は無視。
+# DelivType (必須, integer <int32>): 受渡区分
+#   ※現物買は指定必須。
+#   ※現物売は「0(指定なし)」を設定。
+#   ※信用新規は「0(指定なし)」を設定。
+#   ※信用返済は指定必須。
+#   ※auマネーコネクトが有効の場合にのみ、「3」を設定可能。
+#   定義値:
+#     0: 指定なし
+#     2: お預り金
+#     3: auマネーコネクト
+# FundType (string): 資産区分（預り区分）
+#   ※現物買は指定必須。
+#   ※現物売は「  」（半角スペース2つ）を指定必須。
+#   ※信用新規と信用返済は「11」を指定するか、指定なしでも可。指定しない場合は「11」が自動的にセットされます。
+#   定義値:
+#     (半角スペース2つ): 現物売の場合
+#     02: 保護
+#     AA: 信用代用
+#     11: 信用取引
+# AccountType (必須, integer <int32>): 口座種別
+#   定義値:
+#     2: 一般
+#     4: 特定
+#     12: 法人
+# Qty (必須, integer <int32>): 注文数量
+#   ※信用一括返済の場合、返済したい合計数量を入力。
+# ClosePositionOrder (integer <int32>): 決済順序
+#   ※信用返済の場合、必須。
+#   ※ClosePositionOrderとClosePositionsはどちらか一方のみ指定可能。
+#   ※ClosePositionOrderとClosePositionsを両方指定した場合、エラー。
+#   定義値:
+#     0: 日付（古い順）、損益（高い順）
+#     1: 日付（古い順）、損益（低い順）
+#     2: 日付（新しい順）、損益（高い順）
+#     3: 日付（新しい順）、損益（低い順）
+#     4: 損益（高い順）、日付（古い順）
+#     5: 損益（高い順）、日付（新しい順）
+#     6: 損益（低い順）、日付（古い順）
+#     7: 損益（低い順）、日付（新しい順）
+# ClosePositions (Array of objects): 返済建玉指定
+#   ※信用返済の場合、必須。
+#   ※ClosePositionOrderとClosePositionsはどちらか一方のみ指定可能。
+#   ※ClosePositionOrderとClosePositionsを両方指定した場合、エラー。
+#   ※信用一括返済の場合、各建玉IDと返済したい数量を入力。
+#   ※建玉IDは「E」から始まる番号です。
+# FrontOrderType (必須, integer <int32>): 執行条件
+#   定義値:
+#     10: 成行 (Price: 0)
+#     13: 寄成（前場） (Price: 0)
+#     14: 寄成（後場） (Price: 0)
+#     15: 引成（前場） (Price: 0)
+#     16: 引成（後場） (Price: 0)
+#     17: IOC成行 (Price: 0)
+#     20: 指値 (発注金額を指定)
+#     21: 寄指（前場） (発注金額を指定)
+#     22: 寄指（後場） (発注金額を指定)
+#     23: 引指（前場） (発注金額を指定)
+#     24: 引指（後場） (発注金額を指定)
+#     25: 不成（前場） (発注金額を指定)
+#     26: 不成（後場） (発注金額を指定)
+#     27: IOC指値 (発注金額を指定)
+#     30: 逆指値 (Priceは指定なし、AfterHitPriceで指定)
+#   ※AfterHitPriceで指定ください
+# Price (必須, number <double>): 注文価格
+#   ※FrontOrderTypeで成行を指定した場合、0を指定。
+#   ※FrontOrderTypeに応じた価格指定が必要。
+# ExpireDay (必須, integer <int32>): 注文有効期限
+#   yyyyMMdd形式。
+#   0: 本日 (引けまでの間は当日、引け後は翌取引所営業日、休前日は休日明けの取引所営業日)
+#   ※ 日替わりはkabuステーションが日付変更通知を受信したタイミングです。
+# ReverseLimitOrder (object): 逆指値条件
+#   ※FrontOrderTypeで逆指値を指定した場合のみ必須。
+
+
     """
     新規
     """
@@ -602,18 +711,17 @@ class OrderExecutor:
             'Password': self.order_password,
             'Symbol': self.init.symbol,
             'Exchange': 1,
-            'SecurityType': 1,
+            'SecurityType': 1,                      # 証券種別（例: 1は株式）
             'Side': side,
-            'CashMargin': 2,
-            'MarginTradeType': 3,                   
+            'CashMargin': 2,                        # 信用区分（2：信用取引）
+            'MarginTradeType': 3,                   # 信用取引区分（1：制度信用、2：制度信用、3：制度信用）
             'DelivType': 0,
             'AccountType': 4,
             'Qty': quantity, 
-            'FrontOrderType': 10, 
+            'FrontOrderType': 10,                   # 執行条件コード（10：成行、27:IOC指値、30：逆指値）
             'Price': 0, 
-            'ExpireDay': 0 
+            'ExpireDay': 0                          # 注文有効期限（日数、0は当日）
         }
-
         json_data = json.dumps(obj).encode('utf-8')
         url = f"{API_BASE_URL}/sendorder"
         req = urllib.request.Request(url, json_data, method='POST')
@@ -656,10 +764,7 @@ class OrderExecutor:
             'Price': 0,                   
             'ExpireDay': 0 
         }
-
-
         json_data = json.dumps(obj).encode('utf-8')
-
         url = f"{API_BASE_URL}/sendorder"
         req = urllib.request.Request(url, json_data, method='POST')
         req.add_header('Content-Type', 'application/json') 
@@ -703,7 +808,6 @@ class OrderExecutor:
                 'AfterHitPrice': stop_price  # 逆指値価格
             }
         }
-
         json_data = json.dumps(obj).encode('utf-8')
         url = f"{API_BASE_URL}/sendorder"
         req = urllib.request.Request(url, json_data, method='POST')
@@ -745,7 +849,6 @@ class OrderExecutor:
             'Price': price,  
             'ExpireDay': 0  
         }
-        
         json_data = json.dumps(obj).encode('utf-8')
         url = f"{API_BASE_URL}/sendorder"
         req = urllib.request.Request(url, json_data, method='POST')
@@ -792,7 +895,6 @@ class OrderExecutor:
             'Price': price,
             'ExpireDay': 0 
         }
-
         json_data = json.dumps(obj).encode('utf-8')
         url = f"{API_BASE_URL}/sendorder"
         req = urllib.request.Request(url, json_data, method='POST')
