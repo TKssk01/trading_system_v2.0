@@ -111,8 +111,7 @@ class OrderExecutor:
         price_threshold = 0.1  # 価格変動の閾値
 
         # 注文の側面を数値で定義
-        BUY = "2"
-        SELL = "1"
+        SIDE = {"BUY": "2", "SELL": "1"}
 
         if self.init.interpolated_data is None or self.init.interpolated_data.empty:
             print("補間データが存在しません。注文の実行をスキップします。")
@@ -120,6 +119,7 @@ class OrderExecutor:
 
         # 最後の行を取得
         last_row = self.init.interpolated_data.iloc[-1]
+
         # シグナルを取得
         buy_signal = last_row.get('buy_signals', 0)
         buy_exit_signal = last_row.get('buy_exit_signals', 0)
@@ -135,6 +135,24 @@ class OrderExecutor:
         special_buy_exit_signal = last_row.get('special_buy_exit_signals', 0)
         special_sell_signal = last_row.get('special_sell_signals', 0)
         special_sell_exit_signal = last_row.get('special_sell_exit_signals', 0)
+
+        # シグナルを辞書で管理(辞書で管理ver)
+        # signals = {
+        #     "buy": last_row.get('buy_signals', 0),
+        #     "buy_exit": last_row.get('buy_exit_signals', 0),
+        #     "sell": last_row.get('sell_signals', 0),
+        #     "sell_exit": last_row.get('sell_exit_signals', 0),
+        #     "emergency_buy_exit": last_row.get('emergency_buy_exit_signals', 0),
+        #     "emergency_sell_exit": last_row.get('emergency_sell_exit_signals', 0),
+        #     "hedge_buy": last_row.get('hedge_buy_signals', 0),
+        #     "hedge_buy_exit": last_row.get('hedge_buy_exit_signals', 0),
+        #     "hedge_sell": last_row.get('hedge_sell_signals', 0),
+        #     "hedge_sell_exit": last_row.get('hedge_sell_exit_signals', 0),
+        #     "special_buy": last_row.get('special_buy_signals', 0),
+        #     "special_buy_exit": last_row.get('special_buy_exit_signals', 0),
+        #     "special_sell": last_row.get('special_sell_signals', 0),
+        #     "special_sell_exit": last_row.get('special_sell_exit_signals', 0),
+        # }
 
         # 1. 新規シグナルの検知と逆指値注文の発行
         if buy_signal == 1 or sell_signal == 1:
