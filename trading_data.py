@@ -41,23 +41,19 @@ class TradingData:
     def safe_concat(self, df1: pd.DataFrame, df2: pd.DataFrame) -> pd.DataFrame:
         """
         空または全てNAの行・列を除外してデータフレームを連結します。
-
-        Parameters:
-            df1 (pd.DataFrame): 連結元のデータフレーム
-            df2 (pd.DataFrame): 連結対象のデータフレーム
-
-        Returns:
-            pd.DataFrame: 連結後のデータフレーム
         """
         if df2.empty:
-            self.logger.warning("連結対象のデータフレームが空のため、連結をスキップしました。")
+            self.logger.warning(f"連結対象のデータフレームが空のため、連結をスキップしました。df2のshape: {df2.shape}")
             return df1
-        # 全てNAの列・行を除外
+
         df2_cleaned = df2.dropna(axis=1, how='all').dropna(axis=0, how='all')
+        
         if df2_cleaned.empty:
-            self.logger.warning("連結対象のデータフレームが全てNAのため、連結をスキップしました。")
+            self.logger.warning(f"連結対象のデータフレームが全てNAのため、連結をスキップしました。df2のshape: {df2.shape}, df2_cleanedのshape: {df2_cleaned.shape}")
             return df1
-        return pd.concat([df1, df2_cleaned], ignore_index=False)
+        # インデックスの重複の可能性がある場合は、以下のように調整する
+        # df2_cleaned.index = pd.RangeIndex(start=len(df1), stop=len(df1) + len(df2_cleaned))
+        return pd.concat([df1, df2_cleaned], ignore_index=True) # ignore_indexを変更
 
 
     # データの表示
@@ -336,10 +332,12 @@ class TradingData:
                 print(f"属性 {current} または {prev} が存在しません。")
 
 
-    # 最新価格の取得
+
+    # 価格の取得
     def fetch_current_price(self):
         """
         最新の価格をAPIから取得し、pricesリストに追加します。
+        previous_price と current_price を更新します。
         """
         board_url = f"{self.init.api_base_url}/board/{self.init.symbol}@{self.init.exchange}"
         headers = {'X-API-KEY': self.init.token}
@@ -347,11 +345,18 @@ class TradingData:
             response = requests.get(board_url, headers=headers)
             if response.status_code == 200:
                 board = response.json()
-                current_price = board.get('CurrentPrice')
-                if current_price is not None:
-                    self.init.prices.append(current_price)
-                    self.logger.info(f"取得した価格: {current_price}")
-                    return current_price
+                fetched_price = board.get('CurrentPrice')
+                if fetched_price is not None:
+                    self.init.prices.append(fetched_price)
+                    self.logger.info(f"取得した価格: {fetched_price}")
+                    
+                    # previous_price と current_price を更新
+                    if self.init.current_price is not None:
+                        self.init.previous_price = self.init.current_price
+                    self.init.current_price = fetched_price
+                    
+                    self.logger.info(f"previous_price: {self.init.previous_price}, current_price: {self.init.current_price}")
+                    return fetched_price
                 else:
                     self.logger.warning("取得した価格が None です。")
                     return None
@@ -361,6 +366,7 @@ class TradingData:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"価格取得中に例外が発生しました: {e}")
             return None
+
 
     # 価格リストを作成し、OHLCデータを生成
     def create_ohlc(self):

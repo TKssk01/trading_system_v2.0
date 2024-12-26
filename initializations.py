@@ -132,7 +132,7 @@ class Initializations:
         self.entry_price = 0.0
 
         # パフォーマンス計算用の変数
-        self.performance_entry_price = 0  # エントリー価格
+        self.performance_entry_price = 0
         self.performance_entry_type = None  # エントリータイプ ('buy' or 'sell')
 
         # エントリー価格を保持
@@ -150,6 +150,10 @@ class Initializations:
         # 前回の前回の特別シグナルのフラグ
         self.prev_special_sell_active_prev = False
         self.prev_special_buy_active_prev = False
+
+        # ★ 新たに追加する変数 ★
+        self.previous_price = None  # 一つ前の価格
+        self.current_price = None   # 現在の価格
 
 
         
