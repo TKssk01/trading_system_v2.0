@@ -52,7 +52,7 @@ class TradingData:
             self.logger.warning(f"連結対象のデータフレームが全てNAのため、連結をスキップしました。df2のshape: {df2.shape}, df2_cleanedのshape: {df2_cleaned.shape}")
             return df1
         # インデックスの重複の可能性がある場合は、以下のように調整する
-        # df2_cleaned.index = pd.RangeIndex(start=len(df1), stop=len(df1) + len(df2_cleaned))
+        df2_cleaned.index = pd.RangeIndex(start=len(df1), stop=len(df1) + len(df2_cleaned))
         return pd.concat([df1, df2_cleaned], ignore_index=True) # ignore_indexを変更
 
 
@@ -110,46 +110,51 @@ class TradingData:
             # Log an error if 'interpolated_data' does not exist or is empty
             self.init.logger.error("データフレーム 'interpolated_data' が存在しないか、空です。")
 
-        print("buy_entry_price")
-        print(self.init.buy_entry_price)
-        print("")
+        # ここから表示を改善
+        data = {
+            "項目": [
+                "buy_entry_price",
+                "sell_entry_price",
+                "original_entry_price",
+                "special_entry_price",
+                "signal_position_prev2",
+                "signal_position_prev",
+                "signal_position",
+                "signal_position2_prev2",
+                "signal_position2_prev",
+                "signal_position2"
+            ],
+            "値": [
+                self.init.buy_entry_price,
+                self.init.sell_entry_price,
+                self.init.original_entry_price,
+                self.init.special_entry_price,
+                self.init.signal_position_prev2,
+                self.init.signal_position_prev,
+                self.init.signal_position,
+                self.init.signal_position2_prev2,
+                self.init.signal_position2_prev,
+                self.init.signal_position2
+            ]
+        }
 
-        print("sell_entry_price")
-        print(self.init.sell_entry_price)
-        print("")
+        # DataFrameに変換
+        df = pd.DataFrame(data)
 
-        print("original_entry_price")
-        print(self.init.original_entry_price)
-        print("")
+        # 表のスタイルを調整（オプション）
+        df_styled = df.style.set_table_styles([
+            {'selector': 'th', 'props': [('background-color', '#f2f2f2'), ('text-align', 'center')]},
+            {'selector': 'td', 'props': [('text-align', 'left')]}
+        ]).set_properties(**{'padding': '10px'})
 
-        print("special_entry_price")
-        print(self.init.special_entry_price)
-        print("")
+        # 表示
+        display(Markdown("### エントリおよびシグナル情報"))
+        display(df_styled)
         
-        print("signal_position_prev2")
-        print(self.init.signal_position_prev2)
-        print("")
+        
+        
+        
 
-        print("signal_position_prev")
-        print(self.init.signal_position_prev)
-        print("")
-
-        print("signal_position")
-        print(self.init.signal_position)
-        print("")
-        
-        print("signal_position2_prev2")
-        print(self.init.signal_position2_prev2)
-        print("")
-        
-        print("signal_position2_prev")
-        print(self.init.signal_position2_prev)
-        print("")
-        
-        print("signal_position2")
-        print(self.init.signal_position2)
-        print("")
-        
 
     def reset_signals(self, index):
         # リセットするシグナル列をリスト化
@@ -354,8 +359,6 @@ class TradingData:
                     if self.init.current_price is not None:
                         self.init.previous_price = self.init.current_price
                     self.init.current_price = fetched_price
-                    
-                    self.logger.info(f"previous_price: {self.init.previous_price}, current_price: {self.init.current_price}")
                     return fetched_price
                 else:
                     self.logger.warning("取得した価格が None です。")
@@ -876,10 +879,8 @@ class TradingData:
         current_index_prev = data.index[-2]
         current_close_prev = data.at[current_index_prev, 'close']
         
-        print("current_index")
-        print(current_index)
-        print("current_close")
-        print(current_close)
+        # print("current_close")
+        # print(current_close)
 
         # time.sleep(10)
 
