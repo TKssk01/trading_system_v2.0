@@ -1,5 +1,6 @@
 # order_executor.py
 import urllib.request
+import datetime
 import requests
 import json
 import pprint
@@ -12,7 +13,7 @@ import urllib.parse
 import heapq
 import pprint
 from pprint import pprint
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 """
 価格監視
@@ -101,6 +102,7 @@ class OrderExecutor:
     注文実行
     """
     def execute_orders(self):
+        quantity=100
         fetch_interval = 0.3 
         price_threshold = 0.1  # 価格変動の閾値
 
@@ -137,584 +139,244 @@ class OrderExecutor:
         # self.logger.debug(f"取得したシグナル: {pprint.pformat(signals)}")
         self.logger.debug(f"取得したシグナル: {json.dumps(signals, ensure_ascii=False, indent=4)}")
         
-
-        # 1. エントリーシグナルの検知とエントリー処理
+        
         if signals.get('buy', 0) == 1 or signals.get('sell', 0) == 1:
-            if signals.get('buy', 0) == 1 and signals.get('sell', 0) == 1:
+            
+            # # ロングとショートの同時エントリーを並行処理で実行
+            # with ThreadPoolExecutor(max_workers=2) as executor:
+            #     # 注文をスレッドに割り当て
+            #     future_buy = executor.submit(self.new_order, SIDE["BUY"], quantity)
+            #     future_sell = executor.submit(self.new_order, SIDE["SELL"], quantity)
+
+            #     # `as_completed` を使用してタスクの完了を待つ
+            #     for future in as_completed([future_buy, future_sell]):
+            #         try:
+            #             response = future.result()
+            #             if future == future_buy:
+            #                 long_response = response
+            #                 self.logger.debug(f"Long Response: {long_response}")
+            #             elif future == future_sell:
+            #                 short_response = response
+            #                 self.logger.debug(f"Short Response: {short_response}")
+            #         except Exception as e:
+            #             self.logger.error(f"注文処理中にエラーが発生しました: {e}")
+            #             if future == future_buy:
+            #                 long_response = None
+            #             elif future == future_sell:
+            #                 short_response = None
+                            
+            # # time.sleep(1000)
+
+            # # 例: レスポンスを返す、ログに記録するなど
+            # return long_response, short_response
+        
+        # 約定価格を格納する辞書
+        # execution_prices = {}
+        # execution_prices['buy']
+        
+            # OrderExecutorクラス内またはインスタンスから直接
+            history = self.get_orders_history(params=None, limit=2)
+            # pprint("最新の2件の注文:", history)
+            
+            # 最新の2件の注文をそれぞれ買いと売りとする
+            buy_order = history[1]
+            sell_order = history[0]
+            
+
+            # SeqNumが5の詳細項目からPriceを抽出する関数
+            def extract_price_for_seqnum5(order):
+                for detail in order.get("Details", []):
+                    if detail.get("SeqNum") == 5:
+                        return detail.get("Price")
+                return None
+
+            # 買い注文と売り注文からそれぞれPriceを取得
+            buy_price = extract_price_for_seqnum5(buy_order)
+            sell_price = extract_price_for_seqnum5(sell_order)
+
+            # 結果を表示
+            # print("買いの価格:", buy_price)
+            # print("売りの価格:", sell_price)
+            
+            
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # 買い玉に対する逆指値注文を実行
+                future_rev_buy = executor.submit(self.reverse_limit_order, SIDE["BUY"], 1, quantity, buy_price)
+                # 売り玉に対する逆指値注文を実行
+                future_rev_sell = executor.submit(self.reverse_limit_order, SIDE["SELL"], 2, quantity, sell_price)
                 
-                # ロングとショートの同時エントリー
-                long_response, short_response = self.new_order(SIDE["BUY"], quantity=100), self.new_order(SIDE["SELL"], quantity=100)
                 time.sleep(1000)
-                
-                # 両方の注文を1行で並行実行
-                # long_response, short_response = tuple(concurrent.futures.ThreadPoolExecutor().submit(self.new_order, side, 100).result() for side in [SIDE["BUY"], SIDE["SELL"]])
-                if long_response and short_response:
-                    print("ロングとショートの両ポジションをエントリーしました。")
-                    self.logger.info("ロングとショートの両ポジションをエントリーしました。")
-                    self.base_price = self.init.current_price
-                    self.logger.info(f"エントリー価格を基準価格として設定しました: {self.base_price}")
-                    
-                    # 逆指値注文を設定（損切り）
-                    stop_long_response = self.reverse_limit_order(SIDE["SELL"], 100, self.base_price - price_threshold)
-                    stop_short_response = self.reverse_limit_order(SIDE["BUY"], 100, self.base_price + price_threshold)
-                    
-                    time.sleep(100)
-                    
-                    if stop_long_response and stop_short_response:
-                        self.stop_orders["long"] = stop_long_response.get("OrderID")
-                        self.stop_orders["short"] = stop_short_response.get("OrderID")
-                        self.logger.info(f"ロングポジションの逆指値注文を設定しました。OrderID: {self.stop_orders['long']}")
-                        self.logger.info(f"ショートポジションの逆指値注文を設定しました。OrderID: {self.stop_orders['short']}")
-                    else:
-                        self.logger.error("逆指値注文の設定に失敗しました。")
-                        
-                else:
-                    print("エントリー注文の一部が失敗しました。")
-                    self.logger.error("エントリー注文の一部が失敗しました。")
-               
-            elif signals.get('buy', 0) == 1:
-                # ロングのみエントリー
-                try:
-                    long_response = self.new_order(SIDE["BUY"], quantity=100)
-                    if long_response:
-                        print("ロングポジションをエントリーしました。")
-                        self.logger.info("ロングポジションをエントリーしました。")
-                        self.base_price = self.init.current_price
-                        self.logger.info(f"ロングエントリー価格を基準価格として設定しました: {self.base_price}")
-                        
-                        # 逆指値注文を設定
-                        stop_long_response = self.reverse_limit_order(SIDE["SELL"], 100, self.base_price - price_threshold)
-                        if stop_long_response:
-                            self.stop_orders["long"] = stop_long_response.get("OrderID")
-                            self.logger.info(f"ロングポジションの逆指値注文を設定しました。OrderID: {self.stop_orders['long']}")
-                        else:
-                            self.logger.error("ロングポジションの逆指値注文の設定に失敗しました。")
-                    else:
-                        print("ロングポジションのエントリーに失敗しました。")
-                        self.logger.error("ロングポジションのエントリーに失敗しました。")
-                except Exception as e:
-                    self.logger.error(f"ロングエントリー時に例外が発生しました: {e}")
-            elif signals.get('sell', 0) == 1:
-                # ショートのみエントリー
-                try:
-                    short_response = self.new_order(SIDE["SELL"], quantity=100)
-                    if short_response:
-                        print("ショートポジションをエントリーしました。")
-                        self.logger.info("ショートポジションをエントリーしました。")
-                        self.base_price = self.init.current_price
-                        self.logger.info(f"ショートエントリー価格を基準価格として設定しました: {self.base_price}")
-                        
-                        # 逆指値注文を設定
-                        stop_short_response = self.reverse_limit_order(SIDE["BUY"], 100, self.base_price + price_threshold)
-                        if stop_short_response:
-                            self.stop_orders["short"] = stop_short_response.get("OrderID")
-                            self.logger.info(f"ショートポジションの逆指値注文を設定しました。OrderID: {self.stop_orders['short']}")
-                        else:
-                            self.logger.error("ショートポジションの逆指値注文の設定に失敗しました。")
-                    else:
-                        print("ショートポジションのエントリーに失敗しました。")
-                        self.logger.error("ショートポジションのエントリーに失敗しました。")
-                except Exception as e:
-                    self.logger.error(f"ショートエントリー時に例外が発生しました: {e}")
 
-        else:
-            print(f"エントリーシグナルが検知されませんでした。")
-            self.logger.info("エントリーシグナルが検知されませんでした。")
 
-        # 基準価格が設定されていない場合は以降の処理をスキップ
-        if self.base_price is None:
-            self.logger.warning("基準価格が設定されていません。エントリーシグナルを待っています。")
+                # 各注文のレスポンスを取得
+                try:
+                    reverse_buy_response = future_rev_buy.result()
+                    self.logger.debug(f"Reverse Buy Order Response: {reverse_buy_response}")
+                except Exception as e:
+                    self.logger.error(f"逆指値買い注文中にエラーが発生しました: {e}")
+                    reverse_buy_response = None
+
+                try:
+                    reverse_sell_response = future_rev_sell.result()
+                    self.logger.debug(f"Reverse Sell Order Response: {reverse_sell_response}")
+                except Exception as e:
+                    self.logger.error(f"逆指値売り注文中にエラーが発生しました: {e}")
+                    reverse_sell_response = None
+                    
+                    
+            import time
+import json
+from concurrent.futures import ThreadPoolExecutor
+
+class YourOrderExecutor:
+    def __init__(self, init, logger, trading_api):
+        self.init = init
+        self.logger = logger
+        self.trading_api = trading_api
+
+    def new_order(self, side, quantity):
+        # (既存のコード)
+        self.logger.info(f"新規注文を発注: side={side}, quantity={quantity}")
+        return {"order_id": "dummy_new_order_id"}
+
+    def get_orders_history(self, params=None, limit=2):
+        # (既存のコード)
+        return [
+            {"Details": [{"SeqNum": 5, "Price": 100.0}]},
+            {"Details": [{"SeqNum": 5, "Price": 99.0}]}
+        ]
+
+    def reverse_limit_order(self, side, trigger_sec, quantity, limit_price):
+        underover = 2 if side == "2" else 1 # 買いなら以上、売りなら以下
+        params = {
+            'FrontOrderType': '1',  # 逆指値
+            'ReverseLimitOrder': {
+                'TriggerSec': trigger_sec,
+                'TriggerPrice': limit_price,
+                'UnderOver': underover,
+                'AfterHitOrderType': 2,  # 指値
+                'AfterHitPrice': limit_price
+            },
+            'Side': side,
+            'Quantity': quantity,
+            'Price': limit_price, # 指値価格も設定 (AfterHitOrderTypeが指値のため)
+            'OrderType': '2' # 指値
+        }
+        self.logger.info(f"逆指値注文を発注: {params}")
+        # ここで実際の発注処理を呼び出す (例: self.trading_api.place_order_with_params(params))
+        order_response = {"order_id": f"dummy_reverse_limit_order_id_{side}"} # ダミー
+        return order_response.get("order_id")
+
+    def cancel_order(self, order_id):
+        self.logger.info(f"注文をキャンセル: order_id={order_id}")
+        # ここで実際のキャンセル処理を呼び出す (例: self.trading_api.cancel_order(order_id))
+        return {"status": "success"} # ダミー
+
+    def get_order_status(self, order_id):
+        self.logger.info(f"注文ステータスを取得: order_id={order_id}")
+        return {"status": "PENDING"} # ダミー
+
+    def execute_orders(self):
+        quantity=100
+        SIDE = {"BUY": "2", "SELL": "1"}
+
+        if self.init.interpolated_data is None or self.init.interpolated_data.empty:
+            self.logger.info("補間データが存在しません。注文の実行をスキップします。")
             return
 
+        last_row = self.init.interpolated_data.iloc[-1]
+        signals = {
+            "buy": last_row.get('buy_signals', 0),
+            "buy_exit": last_row.get('buy_exit_signals', 0),
+            "sell": last_row.get('sell_signals', 0),
+            "sell_exit": last_row.get('sell_exit_signals', 0),
+            "emergency_buy_exit": last_row.get('emergency_buy_exit_signals', 0),
+            "emergency_sell_exit": last_row.get('emergency_sell_exit_signals', 0),
+            "hedge_buy": last_row.get('hedge_buy_signals', 0),
+            "hedge_buy_exit": last_row.get('hedge_buy_exit_signals', 0),
+            "hedge_sell": last_row.get('hedge_sell_signals', 0),
+            "hedge_sell_exit": last_row.get('hedge_sell_exit_signals', 0),
+            "special_buy": last_row.get('special_buy_signals', 0),
+            "special_buy_exit": last_row.get('special_buy_exit_signals', 0),
+            "special_sell": last_row.get('special_sell_signals', 0),
+            "special_sell_exit": last_row.get('special_sell_exit_signals', 0),
+        }
+        self.logger.debug(f"取得したシグナル: {json.dumps(signals, ensure_ascii=False, indent=4)}")
 
-        # 2. 価格変動の監視
-        while True:
-            try:
-                # 現在の価格を取得
-                current_price = self.fetch_current_price()
-                self.init.current_price = current_price
-                self.logger.info(f"取得した価格: {current_price}")
+        if signals.get('buy', 0) == 1 or signals.get('sell', 0) == 1:
+            history = self.get_orders_history(params=None, limit=2)
+            buy_order = history[1]
+            sell_order = history[0]
 
-                # 価格変動を計算
-                price_change = current_price - self.base_price
-                self.logger.info(f"価格変動: {price_change}")
+            def extract_price_for_seqnum5(order):
+                for detail in order.get("Details", []):
+                    if detail.get("SeqNum") == 5:
+                        return detail.get("Price")
+                return None
 
-                # 価格変動が閾値を超えたかチェック
-                if abs(price_change) >= price_threshold:
-                    if price_change >= price_threshold:
-                        # ロングポジションが有利に動いた場合、手仕舞い
-                        try:
-                            exit_response = self.exit_order(SIDE["SELL"], quantity=100)
-                            if exit_response:
-                                print("ロングポジションを手仕舞いしました。")
-                                self.logger.info("ロングポジションを手仕舞いしました。")
+            buy_price = extract_price_for_seqnum5(buy_order)
+            sell_price = extract_price_for_seqnum5(sell_order)
 
-                                # 逆指値注文をキャンセル
-                                if self.stop_orders["long"]:
-                                    cancel_response = self.cancel_order(self.stop_orders["long"])
-                                    if cancel_response:
-                                        self.logger.info(f"ロングポジションの逆指値注文をキャンセルしました。OrderID: {self.stop_orders['long']}")
-                                    else:
-                                        self.logger.error(f"ロングポジションの逆指値注文のキャンセルに失敗しました。OrderID: {self.stop_orders['long']}")
-                                    self.stop_orders["long"] = None
-                        except Exception as e:
-                            self.logger.error(f"ロングポジションの手仕舞い中に例外が発生しました: {e}")
+            reverse_buy_order_id = None
+            reverse_sell_order_id = None
+            
+            #逆指値注文の発行
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                future_rev_buy = executor.submit(self.reverse_limit_order, SIDE["BUY"], 1, quantity, buy_price)
+                future_rev_sell = executor.submit(self.reverse_limit_order, SIDE["SELL"], 1, quantity, sell_price)
 
-                    elif price_change <= -price_threshold:
-                        # ショートポジションが有利に動いた場合、手仕舞い
-                        try:
-                            exit_response = self.exit_order(SIDE["BUY"], quantity=100)
-                            if exit_response:
-                                print("ショートポジションを手仕舞いしました。")
-                                self.logger.info("ショートポジションを手仕舞いしました。")
+                try:
+                    reverse_buy_order_id = future_rev_buy.result(timeout=60)
+                    self.logger.debug(f"Reverse Buy Order ID: {reverse_buy_order_id}")
+                except Exception as e:
+                    self.logger.error(f"逆指値買い注文中にエラーが発生しました: {e}")
 
-                                # 逆指値注文をキャンセル
-                                if self.stop_orders["short"]:
-                                    cancel_response = self.cancel_order(self.stop_orders["short"])
-                                    if cancel_response:
-                                        self.logger.info(f"ショートポジションの逆指値注文をキャンセルしました。OrderID: {self.stop_orders['short']}")
-                                    else:
-                                        self.logger.error(f"ショートポジションの逆指値注文のキャンセルに失敗しました。OrderID: {self.stop_orders['short']}")
-                                    self.stop_orders["short"] = None
-                        except Exception as e:
-                            self.logger.error(f"ショートポジションの手仕舞い中に例外が発生しました: {e}")
-
-                    # 価格トレンドの評価
-                    self.price_history.append(price_change)
-                    if len(self.price_history) > self.max_history:
-                        self.price_history.pop(0)
-
-                    # 価格が3回連続で上昇後1回下降した場合
-                    if len(self.price_history) == self.max_history:
-                        if self.price_history[-4:] == [price_threshold, price_threshold, price_threshold, -price_threshold]:
-                            print("価格が3回連続で上昇後、1回下降しました。ロングポジションを部分的に手仕舞いします。")
-                            self.logger.info("価格が3回連続で上昇後、1回下降しました。ロングポジションを部分的に手仕舞いします。")
-
-                            try:
-                                # ロングポジションの部分的な手仕舞い
-                                exit_response = self.exit_order(SIDE["SELL"], quantity=100)
-                                if exit_response:
-                                    print("ロングポジションを部分的に手仕舞いしました。")
-                                    self.logger.info("ロングポジションを部分的に手仕舞いしました。")
-
-                                    # 逆指値注文をキャンセル
-                                    if self.stop_orders["long"]:
-                                        cancel_response = self.cancel_order(self.stop_orders["long"])
-                                        if cancel_response:
-                                            self.logger.info(f"ロングポジションの逆指値注文をキャンセルしました。OrderID: {self.stop_orders['long']}")
-                                        else:
-                                            self.logger.error(f"ロングポジションの逆指値注文のキャンセルに失敗しました。OrderID: {self.stop_orders['long']}")
-                                        self.stop_orders["long"] = None
-
-                                # ショートポジションの部分的な手仕舞い
-                                exit_response = self.exit_order(SIDE["BUY"], quantity=100)
-                                if exit_response:
-                                    print("ショートポジションを部分的に手仕舞いしました。")
-                                    self.logger.info("ショートポジションを部分的に手仕舞いしました。")
-
-                                    # 逆指値注文をキャンセル
-                                    if self.stop_orders["short"]:
-                                        cancel_response = self.cancel_order(self.stop_orders["short"])
-                                        if cancel_response:
-                                            self.logger.info(f"ショートポジションの逆指値注文をキャンセルしました。OrderID: {self.stop_orders['short']}")
-                                        else:
-                                            self.logger.error(f"ショートポジションの逆指値注文のキャンセルに失敗しました。OrderID: {self.stop_orders['short']}")
-                                        self.stop_orders["short"] = None
-                            except Exception as e:
-                                self.logger.error(f"部分的な手仕舞い中に例外が発生しました: {e}")
-
-                    # 4. 逆指値注文の再設定（必要に応じて）
-                    # 基準価格の更新
-                    self.base_price = current_price
-                    self.logger.info(f"基準価格を更新しました。新価格: {self.base_price}")
-
-                    # 逆指値注文の再設定
-                    try:
-                        if self.stop_orders["long"] is None:
-                            stop_long_response = self.reverse_limit_order(SIDE["SELL"], 100, self.base_price - price_threshold)
-                            if stop_long_response:
-                                self.stop_orders["long"] = stop_long_response.get("OrderID")
-                                self.logger.info(f"ロングポジションの逆指値注文を再設定しました。OrderID: {self.stop_orders['long']}")
-                        if self.stop_orders["short"] is None:
-                            stop_short_response = self.reverse_limit_order(SIDE["BUY"], 100, self.base_price + price_threshold)
-                            if stop_short_response:
-                                self.stop_orders["short"] = stop_short_response.get("OrderID")
-                                self.logger.info(f"ショートポジションの逆指値注文を再設定しました。OrderID: {self.stop_orders['short']}")
-                    except Exception as e:
-                        self.logger.error(f"逆指値注文の再設定中に例外が発生しました: {e}")
-
-            except Exception as e:
-                self.logger.error(f"価格変動の監視中にエラーが発生しました: {e}")
-
-            # 一定の間隔で価格を取得するためにスリープ
-            time.sleep(fetch_interval)
+                try:
+                    reverse_sell_order_id = future_rev_sell.result(timeout=60)
+                    self.logger.debug(f"Reverse Sell Order ID: {reverse_sell_order_id}")
+                except Exception as e:
+                    self.logger.error(f"逆指値売り注文中にエラーが発生しました: {e}")
 
 
 
-    # def execute_orders(self):
-        
-    #     fetch_interval = 0.3 
-    #     price_threshold = 0.1  # 価格変動の閾値
+             # 逆指値注文が発注された場合、それぞれの注文の約定を監視する
+            if reverse_buy_order_id:
+                while True:
+                    time.sleep(1)  # ポーリング間隔を短縮
+                    buy_status = self.get_order_status(reverse_buy_order_id).get("status")
+                    self.logger.debug(f"Reverse Buy Order Status: {buy_status}")
+                    if buy_status == "FILLED":
+                        if reverse_sell_order_id:
+                            self.logger.info(f"逆指値買い注文({reverse_buy_order_id})が約定しました。逆指値売り注文({reverse_sell_order_id})をキャンセルします。")
+                            self.cancel_order(reverse_sell_order_id)
+                        break
+                    elif buy_status in ["CANCELED", "REJECTED"]:
+                        self.logger.info(f"逆指値買い注文({reverse_buy_order_id})がキャンセルまたは拒否されました。")
+                        break
 
-    #     # 注文の側面を数値で定義
-    #     # BUY = "2"
-    #     # SELL = "1"
-
-    #     # 注文の側面を数値で定義
-    #     SIDE = {"BUY": "2", "SELL": "1"}
-
-    #     if self.init.interpolated_data is None or self.init.interpolated_data.empty:
-    #         print("補間データが存在しません。注文の実行をスキップします。")
-    #         return
-
-    #     # 最後の行を取得
-    #     last_row = self.init.interpolated_data.iloc[-1]
-
-    #     # シグナルを取得
-    #     buy_signal = last_row.get('buy_signals', 0)
-    #     buy_exit_signal = last_row.get('buy_exit_signals', 0)
-    #     sell_signal = last_row.get('sell_signals', 0)
-    #     sell_exit_signal = last_row.get('sell_exit_signals', 0)
-    #     emergency_buy_exit_signal = last_row.get('emergency_buy_exit_signals', 0)
-    #     emergency_sell_exit_signal = last_row.get('emergency_sell_exit_signals', 0)
-    #     hedge_buy_signal = last_row.get('hedge_buy_signals', 0)
-    #     hedge_buy_exit_signal = last_row.get('hedge_buy_exit_signals', 0)
-    #     hedge_sell_signal = last_row.get('hedge_sell_signals', 0)
-    #     hedge_sell_exit_signal = last_row.get('hedge_sell_exit_signals', 0)
-    #     special_buy_signal = last_row.get('special_buy_signals', 0)
-    #     special_buy_exit_signal = last_row.get('special_buy_exit_signals', 0)
-    #     special_sell_signal = last_row.get('special_sell_signals', 0)
-    #     special_sell_exit_signal = last_row.get('special_sell_exit_signals', 0)
-
-    #     # シグナルを辞書で管理(辞書で管理ver)
-    #     # signals = {
-    #     #     "buy": last_row.get('buy_signals', 0),
-    #     #     "buy_exit": last_row.get('buy_exit_signals', 0),
-    #     #     "sell": last_row.get('sell_signals', 0),
-    #     #     "sell_exit": last_row.get('sell_exit_signals', 0),
-    #     #     "emergency_buy_exit": last_row.get('emergency_buy_exit_signals', 0),
-    #     #     "emergency_sell_exit": last_row.get('emergency_sell_exit_signals', 0),
-    #     #     "hedge_buy": last_row.get('hedge_buy_signals', 0),
-    #     #     "hedge_buy_exit": last_row.get('hedge_buy_exit_signals', 0),
-    #     #     "hedge_sell": last_row.get('hedge_sell_signals', 0),
-    #     #     "hedge_sell_exit": last_row.get('hedge_sell_exit_signals', 0),
-    #     #     "special_buy": last_row.get('special_buy_signals', 0),
-    #     #     "special_buy_exit": last_row.get('special_buy_exit_signals', 0),
-    #     #     "special_sell": last_row.get('special_sell_signals', 0),
-    #     #     "special_sell_exit": last_row.get('special_sell_exit_signals', 0),
-    #     # }
-
-    #     # 1. 新規シグナルの検知と逆指値注文の発行
-    #     if buy_signal == 1 or sell_signal == 1:
-    #         if buy_signal == 1:
-    #             quantity = 100  # 適切な数量に置き換える
-    #             order_price = self.init.buy_entry_price  # 指値価格を設定
-    #             trigger_price = self.init.buy_trigger_price  # トリガー価格を設定
-    #             response = self.reverse_limit_order(SIDE_BUY, quantity, order_price)
-    #             # 必要に応じて trigger_price の使用方法を追加
-
-    #         if sell_signal == 1:
-    #             quantity = 100  # 適切な数量に置き換える
-    #             order_price = self.init.sell_entry_price  # 指値価格を設定
-    #             trigger_price = self.init.sell_trigger_price  # トリガー価格を設定
-    #             response = self.reverse_limit_order(SIDE_SELL, quantity, order_price)
-    #             # 必要に応じて trigger_price の使用方法を追加
-
-    #     # 2. 市場価格の変動を検知
-
-    #     # 価格が変動するまで待機
-    #     new_price, price_changed, direction = self.wait_for_price_change(fetch_interval, price_threshold)
-
-    #     if price_changed:
-    #         price_change = new_price - self.init.previous_price
-    #         print(f"価格が変動しました。前回価格: {self.init.previous_price}, 新価格: {new_price}, 変動額: {price_change}")
-
-    #         # 価格変動の閾値を確認
-    #         if abs(price_change) >= price_threshold:
-    #             # 新規シグナルを発行
-
-    #             # 最新の2つの注文を取得
-    #             params = {'product': 2, 'details': 'false'}
-    #             latest_orders_response = self.get_orders(params=params, limit=2)
-    #             if latest_orders_response:
-    #                 # latest_orders_responseがリストでない場合はリストに変換
-    #                 latest_orders = latest_orders_response if isinstance(latest_orders_response, list) else [latest_orders_response]
-    #             else:
-    #                 latest_orders = []
-
-    #             # シグナルを同時に発行
-    #             if direction > 0:
-    #                 # 売り方向の変動
-    #                 self.init.logger.info("売り方向の価格変動を検知。reverse_sell_repayment シグナルを発行します。")
-    #                 self.trading_data.set_signal('reverse_sell_repayment', 1)
-
-    #                 # 最新の2つの注文をキャンセル
-    #                 for order in latest_orders:
-    #                     order_id = order.get('OrderID')
-    #                     order_side = order.get('Side')  # '1' = 売, '2' = 買 と仮定
-    #                     if order_side == SIDE_SELL and order_id:
-    #                         self.cancel_order(order_id)
-    #                         self.trading_data.reset_signals(current_index=None)
-    #                     elif order_side == SIDE_BUY and order_id:
-    #                         self.cancel_order(order_id)
-    #                         self.trading_data.reset_signals(current_index=None)
-
-    #             elif direction < 0:
-    #                 # 買い方向の変動
-    #                 self.init.logger.info("買い方向の価格変動を検知。reverse_buy_repayment シグナルを発行します。")
-    #                 self.trading_data.set_signal('reverse_buy_repayment', 1)
-
-    #                 # 最新の2つの注文をキャンセル
-    #                 for order in latest_orders:
-    #                     order_id = order.get('OrderID')
-    #                     order_side = order.get('Side')  # '1' = 売, '2' = 買 と仮定
-    #                     if order_side == SIDE_BUY and order_id:
-    #                         self.cancel_order(order_id)
-    #                         self.trading_data.reset_signals(current_index=None)
-    #                     elif order_side == SIDE_SELL and order_id:
-    #                         self.cancel_order(order_id)
-    #                         self.trading_data.reset_signals(current_index=None)
-
-    #                 # 価格変動後のシグナルの評価
-    #                 if direction > 0:
-    #                     pass  # 価格が上昇方向に変動しました。売りシグナルを継続します。
-    #                 elif direction < 0:
-    #                     self.trading_data.set_signal('reverse_buy_repayment', 0)
-    #                     if latest_orders and 'OrderID' in latest_orders[0]:
-    #                         self.cancel_order(latest_orders[0].get('OrderID'))
-    #                     self.trading_data.reset_signals(current_index=None)
-
-    #                 # 価格のさらなる変動をチェック
-    #                 new_new_price = self.trading_data.fetch_current_price()
-
-    #                 if new_new_price > new_price:
-    #                     pass  # 価格がさらに上昇しました。既存のシステムに制御を委ねます。
-    #                 elif new_new_price < new_price:
-    #                     pass  # 価格がさらに下降しました。新しい売買シグナルを発行します。
-
-    #     else:
-    #         print(f"価格変動が検知されませんでした。")
-
-    #     # 基準価格を更新
-    #     self.init.previous_price = new_price
-    #     self.init.logger.info(f"基準価格を更新しました。新価格: {new_price}")
-
-
-
-    #     # エグジットシグナルの処理（信用売りの買い戻し） - IOC 指値注文
-    #     if sell_exit_signal == 1 and (side == "1" and total_qty['sell'] == 100):
-    #         quantity = 100  # 固定値として設定
-    #         order_price = self.init.sell_entry_price
-    #         try:
-    #             response = self.margin_ioc_exit_order(SIDE_BUY, quantity, order_price)
-    #             time.sleep(0.1)              
-
-    #             # 注文を送信し、最新の注文を取得した後
-    #             latest_order = self.get_orders()
-    #             time.sleep(0.1)
-
-    #             # 最新の詳細情報からRecTypeをチェック
-    #             if latest_order and 'Details' in latest_order:
-    #                 details = latest_order['Details']
-    #                 if details:
-    #                     # 最新の詳細情報を取得（必要に応じてソート）
-    #                     latest_detail = details[-1]
-    #                     rec_type = latest_detail.get('RecType')
-    #                     time.sleep(0.5)
-    #                     if rec_type in (3, 7):
-    #                         current_index = self.init.interpolated_data.index[-1]
-    #                         self.trading_data.reset_signals_2(current_index)
-    #                         time.sleep(1)
-    #                     else:
-    #                         pass  # RecTypeは3,7以外です。リセットは不要です。
-    #                 else:
-    #                     pass  # 最新の注文にDetailsが存在しません。
-    #             else:
-    #                 pass  # 最新の注文情報が取得できませんでした。
-    #         except Exception as e:
-    #             self.init.signal_position = self.init.signal_position_prev2
-
-    #             # 最新の注文が辞書型であるか確認
-    #             if 'latest_order' in locals() and latest_order and isinstance(latest_order, dict):
-    #                 order_id = latest_order.get('ID') or latest_order.get('OrderId')
-    #                 print(f"注文がキャンセルされたため、シグナルをリセットしました。OrderId: {order_id}")
-    #             else:
-    #                 print("注文がキャンセルされたため、シグナルをリセットしました。")
-
-    #         # ポジション情報を取得
-    #         positions_dict = self.get_positions()
-    #         # 売りと買いの総数量を初期化
-    #         total_qty['buy'] = 0.0
-    #         total_qty['sell'] = 0.0
-    #         # side の初期値を設定
-    #         side = None 
-    #         # ポジション情報をループして売りと買いを集計
-    #         for position in positions_dict:
-    #             side = position.get('Side')
-    #             qty = position.get('LeavesQty', 0)
+            if reverse_sell_order_id:
+                while True:
+                    time.sleep(1)  # ポーリング間隔を短縮
+                    sell_status = self.get_order_status(reverse_sell_order_id).get("status")
+                    self.logger.debug(f"Reverse Sell Order Status: {sell_status}")
+                    if sell_status == "FILLED":
+                        if reverse_buy_order_id:
+                            self.logger.info(f"逆指値売り注文({reverse_sell_order_id})が約定しました。逆指値買い注文({reverse_buy_order_id})をキャンセルします。")
+                            self.cancel_order(reverse_buy_order_id)
+                        break
+                    elif sell_status in ["CANCELED", "REJECTED"]:
+                        self.logger.info(f"逆指値売り注文({reverse_sell_order_id})がキャンセルまたは拒否されました。")
+                        break
+                    
+            
                 
-    #             if side == '2':  # 買い
-    #                 total_qty['buy'] += qty
-    #             elif side == '1':  # 売り
-    #                 total_qty['sell'] += qty
-    #             else:
-    #                 pass  # 不明なSideの場合は無視
-    #         time.sleep(0.3)  # 適切な遅延を設定
-
-
-
-    #     # ポジション情報を取得
-    #     positions_dict = self.get_positions()
-
-    #     if (emergency_sell_exit_signal == 1 and (side == "1" and total_qty['sell'] == 100)) or \
-    #     (hedge_sell_exit_signal == 1 and (self.init.signal_position_prev2 == 'hedge_sell' and side == "1" and total_qty['sell'] == 100)) or \
-    #     (special_sell_exit_signal == 1 and (self.init.signal_position_prev == 'special_sell' and side == "1" and total_qty['sell'] == 100)):  # 成行注文
-    #         print("売りエグジットシグナル（緊急または特別）が検出されました。ポジションを閉じます。")
-    #         # quantity = self.init.quantity  # 実際のポジション数量を使用
-    #         quantity = 100  # 固定値として設定
-    #         try:
-    #             response = self.margin_pay_close_position_order(SIDE_BUY, quantity)
-    #             if response:
-    #                 print(f"売りポジションを閉じる注文を送信しました。数量: {quantity}")
-    #         except Exception as e:
-    #             print(f"売りポジションを閉じる注文に失敗しました: {e}")
-    #         # ポジション情報を取得
-    #         positions_dict = self.get_positions()
-    #         # 売りと買いの総数量を初期化
-    #         total_qty['buy'] = 0.0
-    #         total_qty['sell'] = 0.0
-    #         # side の初期値を設定
-    #         side = None 
-    #         # ポジション情報をループして売りと買いを集計
-    #         for position in positions_dict:
-    #             side = position.get('Side')
-    #             qty = position.get('LeavesQty', 0)
-                
-    #             if side == '2':  # 買い
-    #                 total_qty['buy'] += qty
-    #             elif side == '1':  # 売り
-    #                 total_qty['sell'] += qty
-    #             else:
-    #                 print(f"不明なSideのポジションが存在します: {position}")
-    #         time.sleep(0.3)  # 適切な遅延を設定
-
 
         
-
-    #     # エグジットシグナルの処理（信用買いの売り） - IOC 指値注文
-    #     if buy_exit_signal == 1 and (side == "2" and total_qty['buy'] == 100):
-    #         quantity = 100  # 固定値として設定
-    #         order_price = self.init.buy_entry_price
-    #         try:
-    #             response = self.margin_ioc_exit_order(SIDE_SELL, quantity, order_price)              
-    #             time.sleep(0.3)              
-    #             # 注文を送信し、最新の注文を取得した後
-    #             latest_order = self.get_orders()
-    #             time.sleep(0.3)
-    #             # 最新の詳細情報からRecTypeをチェック
-    #             if latest_order and 'Details' in latest_order:
-    #                 details = latest_order['Details']
-    #                 if details:
-    #                     latest_detail = details[-1]
-    #                     rec_type = latest_detail.get('RecType')
-    #                     time.sleep(1)
-    #                     if rec_type in (3, 7):
-    #                         current_index = self.init.interpolated_data.index[-1]
-    #                         self.trading_data.reset_signals_2(current_index)
-    #                         time.sleep(1)
-    #                     else:
-    #                         pass  # RecTypeは3,7以外です。リセットは不要です。
-    #                 else:
-    #                     pass  # 最新の注文にDetailsが存在しません。
-    #             else:
-    #                 pass  # 最新の注文情報が取得できませんでした。
-    #         except Exception as e:
-    #             self.init.signal_position = self.init.signal_position_prev2
-                
-    #             # 最新の注文が辞書型であるか確認
-    #             if 'latest_order' in locals() and latest_order and isinstance(latest_order, dict):
-    #                 order_id = latest_order.get('ID') or latest_order.get('OrderId')
-    #             else:
-    #                 pass  # 注文がキャンセルされたため、シグナルをリセットしました。
-    #         # ポジション情報を取得
-    #         positions_dict = self.get_positions()
-    #         # 売りと買いの総数量を初期化
-    #         total_qty['buy'] = 0.0
-    #         total_qty['sell'] = 0.0
-    #         # side の初期値を設定
-    #         side = None 
-    #         # ポジション情報をループして売りと買いを集計
-    #         for position in positions_dict:
-    #             side = position.get('Side')
-    #             qty = position.get('LeavesQty', 0)
-                
-    #             if side == '2':  # 買い
-    #                 total_qty['buy'] += qty
-    #             elif side == '1':  # 売り
-    #                 total_qty['sell'] += qty
-    #             else:
-    #                 pass  # 不明なSideの場合は無視
-    #         time.sleep(0.3) 
-
         
-    #     if (emergency_buy_exit_signal == 1 and (side == "2" and total_qty['buy'] == 100)) or \
-    #        (hedge_buy_exit_signal == 1 and (self.init.signal_position_prev2 == 'hedge_buy' and side == "2" and total_qty['buy'] == 100)) or \
-    #        (special_buy_exit_signal == 1 and (self.init.signal_position_prev == 'special_buy' and side == "2" and total_qty['buy'] == 100)):
-    #         quantity = 100  # 固定値として設定
-    #         try:
-    #             response = self.margin_pay_close_position_order(SIDE_SELL, quantity)
-    #             if response:
-    #                 pass  # 買いポジションを閉じる注文を送信しました。数量: {quantity}
-    #         except Exception as e:
-    #             pass  # 買いポジションを閉じる注文に失敗しました。
-    #         # ポジション情報を取得
-    #         positions_dict = self.get_positions()
-    #         # 売りと買いの総数量を初期化
-    #         total_qty['buy'] = 0.0
-    #         total_qty['sell'] = 0.0
-    #         # side の初期値を設定
-    #         side = None 
-    #         # ポジション情報をループして売りと買いを集計
-    #         for position in positions_dict:
-    #             side = position.get('Side')
-    #             qty = position.get('LeavesQty', 0)
-                
-    #             if side == '2':  # 買い
-    #                 total_qty['buy'] += qty
-    #             elif side == '1':  # 売り
-    #                 total_qty['sell'] += qty
-    #             else:
-    #                 pass  # 不明なSideの場合は無視
-    #         time.sleep(0.3)  # 適切な遅延を設定
+        # time.sleep(1000)
 
-    #     # エントリーシグナルの処理（信用売りの売り） - 成行注文
-    #     if (hedge_sell_signal == 1 and (side == "2" and total_qty['buy'] == 100)) or special_sell_signal == 1:
-    #         quantity = 100  # 固定値として設定
-    #         try:
-    #             response = self.margin_new_order(SIDE_SELL, quantity)
-    #             if response:
-    #                 pass  # 売りポジションをオープンする成行注文を送信しました。数量: {quantity}
-    #         except Exception as e:
-    #             pass  # 売りポジションをオープンする成行注文に失敗しました。
-    #         # ポジション情報を取得
-    #         positions_dict = self.get_positions()
-    #         # 売りと買いの総数量を初期化
-    #         total_qty['buy'] = 0.0
-    #         total_qty['sell'] = 0.0
-    #         # side の初期値を設定
-    #         side = None 
-    #         # ポジション情報をループして売りと買いを集計
-    #         for position in positions_dict:
-    #             side = position.get('Side')
-    #             qty = position.get('LeavesQty', 0)
-                
-    #             if side == '2':  # 買い
-    #                 total_qty['buy'] += qty
-    #             elif side == '1':  # 売り
-    #                 total_qty['sell'] += qty
-    #             else:
-    #                 pass  # 不明なSideの場合は無視
-    #         time.sleep(0.3)  # 適切な遅延を設定        
+
+
 
     """
     注文取消
@@ -838,18 +500,18 @@ class OrderExecutor:
                 if limit == 1:
                     latest_order = latest_orders[0]
                     print(f"[DEBUG] 最新の注文: {latest_order}")
-                    pprint.pprint(latest_order)
+                    # pprint.pprint(latest_order)
                     return latest_order
                 else:
                     print(f"[DEBUG] 最新の{limit}件の注文: {latest_orders}")
-                    pprint.pprint(latest_orders)
+                    # pprint.pprint(latest_orders)
                     return latest_orders
 
         except urllib.error.HTTPError as e:
             print(f"[ERROR] HTTPエラーが発生しました: {e}")
             try:
                 content = json.loads(e.read())
-                pprint.pprint(content)
+                # pprint.pprint(content)
             except Exception:
                 print("[ERROR] エラーレスポンスの解析に失敗しました。")
             return None
@@ -975,6 +637,10 @@ class OrderExecutor:
     新規
     """
     def new_order(self, side, quantity):
+        
+        start_time = datetime.datetime.now()
+        self.logger.debug(f"{side} order started at {start_time.strftime('%H:%M:%S.%f')}")
+        
         obj = {
             'Password': self.order_password,
             'Symbol': self.init.symbol,
@@ -982,7 +648,7 @@ class OrderExecutor:
             'SecurityType': 1,                      # 証券種別（例: 1は株式）
             'Side': side,
             'CashMargin': 2,                        # 信用区分（2：信用取引）
-            'MarginTradeType': 3,                   # 信用取引区分（1：制度信用、2：制度信用、3：制度信用）
+            'MarginTradeType': 3,                   
             'DelivType': 0,
             'AccountType': 4,
             'Qty': quantity, 
@@ -1003,7 +669,12 @@ class OrderExecutor:
                 return content
         except Exception as e:
             self.logger.error(f"新規注文送信中にエラーが発生しました: {e}")
-            return None
+            content = None
+            
+        end_time = datetime.datetime.now()
+        self.logger.debug(f"{side} order finished at {end_time.strftime('%H:%M:%S.%f')}")
+            
+        return content
         
 
     """
@@ -1044,7 +715,7 @@ class OrderExecutor:
     """
     逆指値
     """
-    def reverse_limit_order(self, side, quantity, stop_price):
+    def reverse_limit_order(self, side, quantity, underover, limit_price):
         obj = {
             'Password': self.order_password,
             'Symbol': self.init.symbol,
@@ -1060,7 +731,12 @@ class OrderExecutor:
             'Price': 0,                      
             'ExpireDay': 0,                
             'ReverseLimitOrder': {
-                'AfterHitPrice': stop_price  # 逆指値価格
+                            'TriggerSec': 1, #1.発注銘柄 2.NK225指数 3.TOPIX指数
+                            'TriggerPrice': limit_price,
+                            'UnderOver': underover, #1.以下 2.以上
+                            'AfterHitOrderType': 2, #1.成行 2.指値 3. 不成
+                            'AfterHitPrice': limit_price  # 逆指値価格
+                
             }
         }
         json_data = json.dumps(obj).encode('utf-8')

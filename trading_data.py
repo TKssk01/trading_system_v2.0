@@ -148,7 +148,7 @@ class TradingData:
         ]).set_properties(**{'padding': '10px'})
 
         # 表示
-        display(Markdown("### エントリおよびシグナル情報"))
+        display(Markdown("### シグナル発行時価格"))
         display(df_styled)
         
         
