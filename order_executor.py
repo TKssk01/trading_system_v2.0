@@ -11,7 +11,7 @@ import os
 import traceback
 import urllib.parse
 import heapq
-import pprint
+# import pprint
 from pprint import pprint
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -133,80 +133,64 @@ class OrderExecutor:
             "special_sell": last_row.get('special_sell_signals', 0),
             "special_sell_exit": last_row.get('special_sell_exit_signals', 0),
         }
-
-        # シグナルのデバッグ表示（オプション）
-        # self.logger.debug(f"取得したシグナル: {signals}")
-        # self.logger.debug(f"取得したシグナル: {pprint.pformat(signals)}")
-        self.logger.debug(f"取得したシグナル: {json.dumps(signals, ensure_ascii=False, indent=4)}")
         
         
         if signals.get('buy', 0) == 1 or signals.get('sell', 0) == 1:
+            # ロングとショートの同時エントリーを並行処理で実行
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                # 注文をスレッドに割り当て
+                future_buy = executor.submit(self.new_order, SIDE["BUY"], quantity)
+                future_sell = executor.submit(self.new_order, SIDE["SELL"], quantity)
+                # `as_completed` を使用してタスクの完了を待つ
+                for future in as_completed([future_buy, future_sell]):
+                    try:
+                        response = future.result()
+                        if future == future_buy:
+                            long_response = response
+                            self.logger.debug(f"Long Response: {long_response}")
+                        elif future == future_sell:
+                            short_response = response
+                            self.logger.debug(f"Short Response: {short_response}")
+                    except Exception as e:
+                        self.logger.error(f"注文処理中にエラーが発生しました: {e}")
+                        if future == future_buy:
+                            long_response = None
+                        elif future == future_sell:
+                            short_response = None
             
-            # # ロングとショートの同時エントリーを並行処理で実行
-            # with ThreadPoolExecutor(max_workers=2) as executor:
-            #     # 注文をスレッドに割り当て
-            #     future_buy = executor.submit(self.new_order, SIDE["BUY"], quantity)
-            #     future_sell = executor.submit(self.new_order, SIDE["SELL"], quantity)
-
-            #     # `as_completed` を使用してタスクの完了を待つ
-            #     for future in as_completed([future_buy, future_sell]):
-            #         try:
-            #             response = future.result()
-            #             if future == future_buy:
-            #                 long_response = response
-            #                 self.logger.debug(f"Long Response: {long_response}")
-            #             elif future == future_sell:
-            #                 short_response = response
-            #                 self.logger.debug(f"Short Response: {short_response}")
-            #         except Exception as e:
-            #             self.logger.error(f"注文処理中にエラーが発生しました: {e}")
-            #             if future == future_buy:
-            #                 long_response = None
-            #             elif future == future_sell:
-            #                 short_response = None
-                            
-            # # time.sleep(1000)
-
-            # # 例: レスポンスを返す、ログに記録するなど
-            # return long_response, short_response
-        
-        # 約定価格を格納する辞書
-        # execution_prices = {}
-        # execution_prices['buy']
-        
-            # OrderExecutorクラス内またはインスタンスから直接
-            history = self.get_orders_history(params=None, limit=2)
-            # pprint("最新の2件の注文:", history)
-            
+            time.sleep(0.2)                
+            position = self.get_positions(params=None)
+            # print(position)
+                        
             # 最新の2件の注文をそれぞれ買いと売りとする
-            buy_order = history[1]
-            sell_order = history[0]
+            buy_order = position[-2]
+            sell_order = position[-1]
             
+            
+            
+            # Priceを抽出する関数
+            def extract_price_for_position(order):
+                return order.get("Price")
 
-            # SeqNumが5の詳細項目からPriceを抽出する関数
-            def extract_price_for_seqnum5(order):
-                for detail in order.get("Details", []):
-                    if detail.get("SeqNum") == 5:
-                        return detail.get("Price")
-                return None
 
             # 買い注文と売り注文からそれぞれPriceを取得
-            buy_price = extract_price_for_seqnum5(buy_order)
-            sell_price = extract_price_for_seqnum5(sell_order)
+            buy_price = extract_price_for_position(buy_order)
+            sell_price = extract_price_for_position(sell_order)
 
             # 結果を表示
             # print("買いの価格:", buy_price)
             # print("売りの価格:", sell_price)
             
             
+            buy_price += 0.2
+            sell_price -= 0.2
+            
+            
             with ThreadPoolExecutor(max_workers=2) as executor:
                 # 買い玉に対する逆指値注文を実行
-                future_rev_buy = executor.submit(self.reverse_limit_order, SIDE["BUY"], 1, quantity, buy_price)
+                future_rev_buy = executor.submit(self.reverse_limit_order, SIDE["BUY"], quantity, 2, buy_price)
                 # 売り玉に対する逆指値注文を実行
-                future_rev_sell = executor.submit(self.reverse_limit_order, SIDE["SELL"], 2, quantity, sell_price)
-                
-                time.sleep(1000)
-
+                future_rev_sell = executor.submit(self.reverse_limit_order, SIDE["SELL"], quantity, 1, sell_price)
 
                 # 各注文のレスポンスを取得
                 try:
@@ -222,159 +206,84 @@ class OrderExecutor:
                 except Exception as e:
                     self.logger.error(f"逆指値売り注文中にエラーが発生しました: {e}")
                     reverse_sell_response = None
+            time.sleep(0.2)
                     
-                    
-            import time
-import json
-from concurrent.futures import ThreadPoolExecutor
-
-class YourOrderExecutor:
-    def __init__(self, init, logger, trading_api):
-        self.init = init
-        self.logger = logger
-        self.trading_api = trading_api
-
-    def new_order(self, side, quantity):
-        # (既存のコード)
-        self.logger.info(f"新規注文を発注: side={side}, quantity={quantity}")
-        return {"order_id": "dummy_new_order_id"}
-
-    def get_orders_history(self, params=None, limit=2):
-        # (既存のコード)
-        return [
-            {"Details": [{"SeqNum": 5, "Price": 100.0}]},
-            {"Details": [{"SeqNum": 5, "Price": 99.0}]}
-        ]
-
-    def reverse_limit_order(self, side, trigger_sec, quantity, limit_price):
-        underover = 2 if side == "2" else 1 # 買いなら以上、売りなら以下
-        params = {
-            'FrontOrderType': '1',  # 逆指値
-            'ReverseLimitOrder': {
-                'TriggerSec': trigger_sec,
-                'TriggerPrice': limit_price,
-                'UnderOver': underover,
-                'AfterHitOrderType': 2,  # 指値
-                'AfterHitPrice': limit_price
-            },
-            'Side': side,
-            'Quantity': quantity,
-            'Price': limit_price, # 指値価格も設定 (AfterHitOrderTypeが指値のため)
-            'OrderType': '2' # 指値
-        }
-        self.logger.info(f"逆指値注文を発注: {params}")
-        # ここで実際の発注処理を呼び出す (例: self.trading_api.place_order_with_params(params))
-        order_response = {"order_id": f"dummy_reverse_limit_order_id_{side}"} # ダミー
-        return order_response.get("order_id")
-
-    def cancel_order(self, order_id):
-        self.logger.info(f"注文をキャンセル: order_id={order_id}")
-        # ここで実際のキャンセル処理を呼び出す (例: self.trading_api.cancel_order(order_id))
-        return {"status": "success"} # ダミー
-
-    def get_order_status(self, order_id):
-        self.logger.info(f"注文ステータスを取得: order_id={order_id}")
-        return {"status": "PENDING"} # ダミー
-
-    def execute_orders(self):
-        quantity=100
-        SIDE = {"BUY": "2", "SELL": "1"}
-
-        if self.init.interpolated_data is None or self.init.interpolated_data.empty:
-            self.logger.info("補間データが存在しません。注文の実行をスキップします。")
-            return
-
-        last_row = self.init.interpolated_data.iloc[-1]
-        signals = {
-            "buy": last_row.get('buy_signals', 0),
-            "buy_exit": last_row.get('buy_exit_signals', 0),
-            "sell": last_row.get('sell_signals', 0),
-            "sell_exit": last_row.get('sell_exit_signals', 0),
-            "emergency_buy_exit": last_row.get('emergency_buy_exit_signals', 0),
-            "emergency_sell_exit": last_row.get('emergency_sell_exit_signals', 0),
-            "hedge_buy": last_row.get('hedge_buy_signals', 0),
-            "hedge_buy_exit": last_row.get('hedge_buy_exit_signals', 0),
-            "hedge_sell": last_row.get('hedge_sell_signals', 0),
-            "hedge_sell_exit": last_row.get('hedge_sell_exit_signals', 0),
-            "special_buy": last_row.get('special_buy_signals', 0),
-            "special_buy_exit": last_row.get('special_buy_exit_signals', 0),
-            "special_sell": last_row.get('special_sell_signals', 0),
-            "special_sell_exit": last_row.get('special_sell_exit_signals', 0),
-        }
-        self.logger.debug(f"取得したシグナル: {json.dumps(signals, ensure_ascii=False, indent=4)}")
-
-        if signals.get('buy', 0) == 1 or signals.get('sell', 0) == 1:
-            history = self.get_orders_history(params=None, limit=2)
-            buy_order = history[1]
-            sell_order = history[0]
-
-            def extract_price_for_seqnum5(order):
-                for detail in order.get("Details", []):
-                    if detail.get("SeqNum") == 5:
-                        return detail.get("Price")
-                return None
-
-            buy_price = extract_price_for_seqnum5(buy_order)
-            sell_price = extract_price_for_seqnum5(sell_order)
-
+            # ここで注文IDを取得
             reverse_buy_order_id = None
             reverse_sell_order_id = None
             
-            #逆指値注文の発行
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future_rev_buy = executor.submit(self.reverse_limit_order, SIDE["BUY"], 1, quantity, buy_price)
-                future_rev_sell = executor.submit(self.reverse_limit_order, SIDE["SELL"], 1, quantity, sell_price)
+            # 最新の2件の注文を取得
+            latest_orders = self.get_orders_history(limit=2)
+            # pprint(latest_orders[-1])
+            # pprint(latest_orders[-2])
+            
+            # 注文一覧が取得できていて、2件以上存在することを確認
+            if latest_orders and len(latest_orders) >= 2:
+                # 一番新しい注文を売り注文と仮定
+                reverse_sell_order_id = latest_orders[-1]['ID']
+                # 2番目に新しい注文を買い注文と仮定
+                reverse_buy_order_id = latest_orders[-2]['ID']
+            else:
+                # 期待する注文が取得できなかった場合の処理
+                reverse_sell_order_id = None
+                reverse_buy_order_id = None
+                self.logger.error("最新の注文が取得できなかったため、キャンセル処理を中止します。")
+                
+            # print(reverse_sell_order_id)
+            # print(reverse_buy_order_id)
+            
+            # time.sleep(1000)
 
-                try:
-                    reverse_buy_order_id = future_rev_buy.result(timeout=60)
-                    self.logger.debug(f"Reverse Buy Order ID: {reverse_buy_order_id}")
-                except Exception as e:
-                    self.logger.error(f"逆指値買い注文中にエラーが発生しました: {e}")
-
-                try:
-                    reverse_sell_order_id = future_rev_sell.result(timeout=60)
-                    self.logger.debug(f"Reverse Sell Order ID: {reverse_sell_order_id}")
-                except Exception as e:
-                    self.logger.error(f"逆指値売り注文中にエラーが発生しました: {e}")
-
-
-
-             # 逆指値注文が発注された場合、それぞれの注文の約定を監視する
-            if reverse_buy_order_id:
+            
+            # 逆指値注文が発注された場合、それぞれの注文の約定を監視する
+            if reverse_buy_order_id or reverse_sell_order_id:
                 while True:
-                    time.sleep(1)  # ポーリング間隔を短縮
-                    buy_status = self.get_order_status(reverse_buy_order_id).get("status")
-                    self.logger.debug(f"Reverse Buy Order Status: {buy_status}")
-                    if buy_status == "FILLED":
+                    # 約定状況を確認
+                    buy_filled = reverse_buy_order_id and self.is_order_filled(reverse_buy_order_id)
+                    sell_filled = reverse_sell_order_id and self.is_order_filled(reverse_sell_order_id)
+
+                    # 買い注文が約定していたら売り注文をキャンセル
+                    if buy_filled:
                         if reverse_sell_order_id:
                             self.logger.info(f"逆指値買い注文({reverse_buy_order_id})が約定しました。逆指値売り注文({reverse_sell_order_id})をキャンセルします。")
                             self.cancel_order(reverse_sell_order_id)
-                        break
-                    elif buy_status in ["CANCELED", "REJECTED"]:
-                        self.logger.info(f"逆指値買い注文({reverse_buy_order_id})がキャンセルまたは拒否されました。")
-                        break
+                        reverse_buy_order_id = None
 
-            if reverse_sell_order_id:
-                while True:
-                    time.sleep(1)  # ポーリング間隔を短縮
-                    sell_status = self.get_order_status(reverse_sell_order_id).get("status")
-                    self.logger.debug(f"Reverse Sell Order Status: {sell_status}")
-                    if sell_status == "FILLED":
+                    # 売り注文が約定していたら買い注文をキャンセル
+                    if sell_filled:
                         if reverse_buy_order_id:
                             self.logger.info(f"逆指値売り注文({reverse_sell_order_id})が約定しました。逆指値買い注文({reverse_buy_order_id})をキャンセルします。")
                             self.cancel_order(reverse_buy_order_id)
-                        break
-                    elif sell_status in ["CANCELED", "REJECTED"]:
-                        self.logger.info(f"逆指値売り注文({reverse_sell_order_id})がキャンセルまたは拒否されました。")
-                        break
-                    
-            
-                
+                        reverse_sell_order_id = None
 
-        
-        
-        # time.sleep(1000)
+                    # 両方の注文が監視対象外になったらループ終了
+                    if not reverse_buy_order_id and not reverse_sell_order_id:
+                        break
 
+                    time.sleep(0.2)
+    
+    
+    """
+    約定判定
+    """
+    def is_order_filled(self, order_id):
+        # 注文IDで履歴を取得
+        params = {'order_id': order_id}
+        history = self.get_orders_history(limit=1, params=params)
+
+        if not history:
+            self.logger.error(f"注文ID {order_id} の履歴が取得できませんでした。")
+            return False
+
+        # 履歴がリスト形式の場合、最初の注文情報を取り出す
+        order_info = history[-1] if isinstance(history, list) else history
+        # デバッグ：取得した注文情報のStateを表示
+        state = order_info.get('State')
+        # デバッグ出力
+        print(f"Order {order_id}: State={state}")
+
+        # Stateが1ならまだ予約中と判定
+        return state != 1
 
 
 
@@ -385,32 +294,29 @@ class YourOrderExecutor:
         
         obj = {
             'OrderID': order_id,
-            'Password': self.order_password  # クラス内で定義されている注文パスワードを使用
+            'Password': self.order_password 
         }
         json_data = json.dumps(obj).encode('utf8')
         
         url = 'http://localhost:18080/kabusapi/cancelorder'
         req = urllib.request.Request(url, json_data, method='PUT')
         req.add_header('Content-Type', 'application/json')
-        req.add_header('X-API-KEY', self.init.token)  # クラス内で定義されているAPIキーを使用
+        req.add_header('X-API-KEY', self.init.token)  
         
         try:
             with urllib.request.urlopen(req) as res:
-                self.logger.info(f"注文キャンセル成功: {res.status} {res.reason}")
+                # print(res.status, res.reason)
+                # for header in res.getheaders():
+                #     print(header)
+                # print()
                 content = json.loads(res.read())
-                pprint.pprint(content)
-                return content
+                # pprint(content)
         except urllib.error.HTTPError as e:
-            self.logger.error(f"HTTPエラー: {e}")
-            try:
-                content = json.loads(e.read())
-                pprint.pprint(content)
-            except Exception:
-                self.logger.error("エラー内容の解析に失敗しました。")
-            return None
+            print(e)
+            content = json.loads(e.read())
+            pprint(content)
         except Exception as e:
-            self.logger.error(f"注文キャンセル中に例外が発生しました: {e}")
-            return None
+            print(e)
 
     """
     ポジション取得
@@ -419,7 +325,7 @@ class YourOrderExecutor:
         if params is None:
             params = {
                 'product': 2,       # 0:すべて、1:現物、2:信用、3:先物、4:OP
-                'symbol': '1579',   # 取得したいシンボル
+                'symbol': '9432',   # 取得したいシンボル
                 'addinfo': 'false'  # 追加情報の出力有無
             }
 
@@ -447,7 +353,7 @@ class YourOrderExecutor:
             self.logger.error(f"HTTPエラーが発生しました: {e}")
             try:
                 error_content = json.loads(e.read())
-                pprint.pprint(error_content)
+                pprint(error_content)
             except Exception:
                 self.logger.error("エラー内容の解析に失敗しました。")
             return None
@@ -458,7 +364,7 @@ class YourOrderExecutor:
     """
     注文履歴取得
     """
-    def get_orders_history(self, params=None, limit=2):
+    def get_orders_history(self, limit, params=None):
         
         if params is None:
             params = {'product': 2}  # デフォルトでは信用を取得
@@ -472,51 +378,31 @@ class YourOrderExecutor:
 
         try:
             with urllib.request.urlopen(req) as res:
-                print(f"[INFO] 注文履歴の取得に成功しました: {res.status} {res.reason}")
+                # print(res.status, res.reason)
+                # for header in res.getheaders():
+                #     print(header)
+                # print()
+
+                # レスポンスを読み込み、JSONにパース
                 content = json.loads(res.read())
+                # 取得した注文履歴を整形して表示（デバッグ用）
+                # pprint(content)
 
-                # contentがリストであることを確認
-                if not isinstance(content, list):
-                    print(f"[ERROR] 期待していたリストではなく、{type(content)}が返されました。内容: {content}")
-                    return None
-
-                if not content:
-                    print("[WARNING] 注文データが空です。")
-                    return None
-
-                # 受信時間でソートして最新の注文を取得
-                try:
-                    # RecvTimeをISOフォーマットとしてソート
-                    sorted_orders = sorted(content, key=lambda x: x.get('RecvTime', ''), reverse=True)
-                    latest_orders = sorted_orders[:limit]
-                except KeyError as e:
-                    print(f"[ERROR] RecvTimeが存在しない注文が含まれています: {e}")
-                    return None
-                except Exception as e:
-                    print(f"[ERROR] 最新の注文を取得中にエラーが発生しました: {e}")
-                    return None
-
-                # 戻り値を決定
-                if limit == 1:
-                    latest_order = latest_orders[0]
-                    print(f"[DEBUG] 最新の注文: {latest_order}")
-                    # pprint.pprint(latest_order)
-                    return latest_order
-                else:
-                    print(f"[DEBUG] 最新の{limit}件の注文: {latest_orders}")
-                    # pprint.pprint(latest_orders)
-                    return latest_orders
+                # 正常に取得できた場合、注文履歴を返す
+                return content
 
         except urllib.error.HTTPError as e:
-            print(f"[ERROR] HTTPエラーが発生しました: {e}")
+            print("HTTPエラー:", e)
             try:
-                content = json.loads(e.read())
-                # pprint.pprint(content)
+                # エラー時のレスポンスをパースして表示
+                error_content = json.loads(e.read())
+                pprint.pprint(error_content)
             except Exception:
                 print("[ERROR] エラーレスポンスの解析に失敗しました。")
             return None
+
         except Exception as e:
-            print(f"[ERROR] 注文履歴の取得中に例外が発生しました: {e}")
+            print("例外発生:", e)
             return None
 
 # ================================
@@ -731,12 +617,11 @@ class YourOrderExecutor:
             'Price': 0,                      
             'ExpireDay': 0,                
             'ReverseLimitOrder': {
-                            'TriggerSec': 1, #1.発注銘柄 2.NK225指数 3.TOPIX指数
-                            'TriggerPrice': limit_price,
-                            'UnderOver': underover, #1.以下 2.以上
-                            'AfterHitOrderType': 2, #1.成行 2.指値 3. 不成
-                            'AfterHitPrice': limit_price  # 逆指値価格
-                
+                'TriggerSec': 1,         # 1.発注銘柄 2.NK225指数 3.TOPIX指数
+                'TriggerPrice': limit_price,
+                'UnderOver': underover,  # 1.以下 2.以上
+                'AfterHitOrderType': 2,  # 1.成行 2.指値 3.不成
+                'AfterHitPrice': limit_price
             }
         }
         json_data = json.dumps(obj).encode('utf-8')
@@ -747,9 +632,14 @@ class YourOrderExecutor:
 
         try:
             with urllib.request.urlopen(req) as res:
-                self.logger.info(f"逆指値注文送信成功: {res.status} {res.reason}")
+                # self.logger.info(f"逆指値注文送信成功: {res.status} {res.reason}")
                 content = json.loads(res.read())
                 return content
+        except urllib.error.HTTPError as e:
+            error_content = e.read().decode('utf-8')
+            self.logger.error(f"HTTPError: {e.code} {e.reason}")
+            self.logger.error(f"レスポンス内容: {error_content}")
+            return None
         except Exception as e:
             self.logger.error(f"逆指値注文送信中にエラーが発生しました: {e}")
             return None
