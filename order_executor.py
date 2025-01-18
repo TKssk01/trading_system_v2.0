@@ -30,8 +30,8 @@ get_orders_history(self, params=None, limit=2)
 new_order(self, side, quantity)
 返済
 exit_order(self, side, quantity)
-逆指値
-reverse_limit_order(self, side, quantity, stop_price)
+逆指値返済
+reverse_limit_order_exit(self, side, quantity, stop_price)
 IOC
 ioc_order(self, side, quantity, price)
 IOC返済
@@ -134,7 +134,7 @@ class OrderExecutor:
             "special_sell_exit": last_row.get('special_sell_exit_signals', 0),
         }
         
-        
+        # Stage1
         if signals.get('buy', 0) == 1 or signals.get('sell', 0) == 1:
             # ロングとショートの同時エントリーを並行処理で実行
             with ThreadPoolExecutor(max_workers=2) as executor:
@@ -160,42 +160,83 @@ class OrderExecutor:
             
             time.sleep(0.2)                
             position = self.get_positions(params=None)
-            # print(position)
+                 
                         
-            # 最新の2件の注文をそれぞれ買いと売りとする
-            buy_order = position[-2]
-            sell_order = position[-1]
+            # 最新の2件の注文を含むリストからそれぞれ買いと売りの注文を判定して取得
+            latest_two_orders = position[-2:]  # 最新の2件を取得
+
+            buy_order = None
+            sell_order = None
+
+            for order in latest_two_orders:
+                side = order.get('Side')
+                if side == '1':
+                    # 「Side」が '1' の場合は売り注文
+                    sell_order = order
+                elif side == '2':
+                    # 「Side」が '2' の場合は買い注文
+                    buy_order = order
+
+            # 注文が正しく取得できたか確認（必要に応じて）
+            if buy_order:
+                print("買い注文:", buy_order)
+            else:
+                print("買い注文が見つかりませんでした。")
+
+            if sell_order:
+                print("売り注文:", sell_order)
+            else:
+                print("売り注文が見つかりませんでした。")
             
             
             
+            time.sleep(0.2)
             # Priceを抽出する関数
             def extract_price_for_position(order):
                 return order.get("Price")
-
-
             # 買い注文と売り注文からそれぞれPriceを取得
             buy_price = extract_price_for_position(buy_order)
+            time.sleep(0.2)
             sell_price = extract_price_for_position(sell_order)
-
-            # 結果を表示
-            # print("買いの価格:", buy_price)
-            # print("売りの価格:", sell_price)
             
             
-            buy_price += 0.2
-            sell_price -= 0.2
-            
+            # 価格を比較し、必要に応じて逆指値用の価格を入れ替える
+            if buy_price > sell_price:
+                # 買いの値段が売りよりも高い場合、逆指値で指定する価格を入れ替える
+                reverse_buy_price = sell_price  # 売りの値段を買いの逆指値に使用
+                reverse_sell_price = buy_price  # 買いの値段を売りの逆指値に使用
+            else:
+                # 通常の場合はそのまま使用
+                reverse_buy_price = buy_price
+                reverse_sell_price = sell_price
             
             with ThreadPoolExecutor(max_workers=2) as executor:
-                # 買い玉に対する逆指値注文を実行
-                future_rev_buy = executor.submit(self.reverse_limit_order, SIDE["BUY"], quantity, 2, buy_price)
-                # 売り玉に対する逆指値注文を実行
-                future_rev_sell = executor.submit(self.reverse_limit_order, SIDE["SELL"], quantity, 1, sell_price)
-
+                # 買い玉に対する逆指値返済注文を実行（逆指値価格として reverse_buy_price を使用）
+                future_rev_buy = executor.submit(
+                    self.reverse_limit_order_exit, 
+                    SIDE["BUY"], 
+                    quantity, 
+                    1, 
+                    reverse_buy_price
+                )
+                # 売り玉に対する逆指値注文を実行（逆指値価格として reverse_sell_price を使用）
+                future_rev_sell = executor.submit(
+                    self.reverse_limit_order_exit, 
+                    SIDE["SELL"], 
+                    quantity, 
+                    2, 
+                    reverse_sell_price
+                )
+                
                 # 各注文のレスポンスを取得
                 try:
                     reverse_buy_response = future_rev_buy.result()
                     self.logger.debug(f"Reverse Buy Order Response: {reverse_buy_response}")
+                    # 逆指値買い注文が成功した場合の処理
+                    if reverse_buy_response is not None:
+                        self.logger.info(f"逆指値買い注文が成功しました。新しい逆指値の価格は {buy_price} です。")
+                        # 標準出力で表示する場合:
+                        # print(f"逆指値買い注文が成功しました。新しい逆指値の価格は {buy_price} です。")
                 except Exception as e:
                     self.logger.error(f"逆指値買い注文中にエラーが発生しました: {e}")
                     reverse_buy_response = None
@@ -203,6 +244,11 @@ class OrderExecutor:
                 try:
                     reverse_sell_response = future_rev_sell.result()
                     self.logger.debug(f"Reverse Sell Order Response: {reverse_sell_response}")
+                    # 逆指値売り注文が成功した場合の処理
+                    if reverse_sell_response is not None:
+                        self.logger.info(f"逆指値売り注文が成功しました。新しい逆指値の価格は {sell_price} です。")
+                        # 標準出力で表示する場合:
+                        # print(f"逆指値売り注文が成功しました。新しい逆指値の価格は {sell_price} です。")
                 except Exception as e:
                     self.logger.error(f"逆指値売り注文中にエラーが発生しました: {e}")
                     reverse_sell_response = None
@@ -214,8 +260,6 @@ class OrderExecutor:
             
             # 最新の2件の注文を取得
             latest_orders = self.get_orders_history(limit=2)
-            # pprint(latest_orders[-1])
-            # pprint(latest_orders[-2])
             
             # 注文一覧が取得できていて、2件以上存在することを確認
             if latest_orders and len(latest_orders) >= 2:
@@ -228,12 +272,6 @@ class OrderExecutor:
                 reverse_sell_order_id = None
                 reverse_buy_order_id = None
                 self.logger.error("最新の注文が取得できなかったため、キャンセル処理を中止します。")
-                
-            # print(reverse_sell_order_id)
-            # print(reverse_buy_order_id)
-            
-            # time.sleep(1000)
-
             
             # 逆指値注文が発注された場合、それぞれの注文の約定を監視する
             if reverse_buy_order_id or reverse_sell_order_id:
@@ -241,6 +279,8 @@ class OrderExecutor:
                     # 約定状況を確認
                     buy_filled = reverse_buy_order_id and self.is_order_filled(reverse_buy_order_id)
                     sell_filled = reverse_sell_order_id and self.is_order_filled(reverse_sell_order_id)
+                    
+                    time.sleep(0.2)
 
                     # 買い注文が約定していたら売り注文をキャンセル
                     if buy_filled:
@@ -248,6 +288,8 @@ class OrderExecutor:
                             self.logger.info(f"逆指値買い注文({reverse_buy_order_id})が約定しました。逆指値売り注文({reverse_sell_order_id})をキャンセルします。")
                             self.cancel_order(reverse_sell_order_id)
                         reverse_buy_order_id = None
+                        
+                    time.sleep(0.2)
 
                     # 売り注文が約定していたら買い注文をキャンセル
                     if sell_filled:
@@ -255,12 +297,11 @@ class OrderExecutor:
                             self.logger.info(f"逆指値売り注文({reverse_sell_order_id})が約定しました。逆指値買い注文({reverse_buy_order_id})をキャンセルします。")
                             self.cancel_order(reverse_buy_order_id)
                         reverse_sell_order_id = None
-
-                    # 両方の注文が監視対象外になったらループ終了
-                    if not reverse_buy_order_id and not reverse_sell_order_id:
-                        break
-
+                        
                     time.sleep(0.2)
+
+
+        # Stage2
     
     
     """
@@ -277,10 +318,17 @@ class OrderExecutor:
 
         # 履歴がリスト形式の場合、最初の注文情報を取り出す
         order_info = history[-1] if isinstance(history, list) else history
+
+        # 注文情報の全内容を確認するために全フィールドをループで出力
+        self.logger.debug(f"Order {order_id} の詳細:")
+        for key, value in order_info.items():
+            self.logger.debug(f"  {key}: {value}")
+            # 必要に応じて print() を使うことも可能
+            # print(f"{key}: {value}")
+
         # デバッグ：取得した注文情報のStateを表示
         state = order_info.get('State')
-        # デバッグ出力
-        print(f"Order {order_id}: State={state}")
+        self.logger.debug(f"Order {order_id}: State={state}")
 
         # Stateが1ならまだ予約中と判定
         return state != 1
@@ -599,16 +647,16 @@ class OrderExecutor:
             return None
 
     """
-    逆指値
+    逆指値返済
     """
-    def reverse_limit_order(self, side, quantity, underover, limit_price):
+    def reverse_limit_order_exit(self, side, quantity, underover, limit_price):
         obj = {
             'Password': self.order_password,
             'Symbol': self.init.symbol,
             'Exchange': 1,
             'SecurityType': 1,      
             'Side': side,           
-            'CashMargin': 2,     
+            'CashMargin': 3,     
             'MarginTradeType': 3,                   
             'DelivType': 0,                 
             'AccountType': 4,                   
