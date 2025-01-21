@@ -77,7 +77,7 @@ class OrderExecutor:
         
         while True:
             try:
-                current_price = self.fetch_current_price()
+                current_price = self.trading_data.fetch_current_price()
                 self.init.current_price = current_price  # 現在の価格を更新
                 self.logger.info(f"取得した価格: {current_price}")
 
@@ -357,8 +357,6 @@ class OrderExecutor:
 
     def execute_orders(self):
         quantity = 100
-        fetch_interval = 0.3 
-        price_threshold = 0.1  # 価格変動の閾値
         SIDE = {"BUY": "2", "SELL": "1"}
 
         # 補間データの存在確認
@@ -409,6 +407,7 @@ class OrderExecutor:
                     # 以下、Stage1の続きの処理を配置…
                 else:
                     self.logger.info("最初のサイクルでシグナルがありませんでした。")
+                    return  # シグナルがなければ関数を終了
                 # 最初のサイクル終了後、フラグを更新
                 first_cycle = False  
             else:
@@ -427,7 +426,6 @@ class OrderExecutor:
                                 self.logger.debug(f"Short Response: {short_response}")
                         except Exception as e:
                             self.logger.error(f"注文処理中にエラーが発生しました: {e}")
-                # 以下、Stage1の続きの処理を配置…
 
             time.sleep(0.2)                
             position = self.get_positions(params=None)
@@ -442,126 +440,228 @@ class OrderExecutor:
                     sell_order = order
                 elif side == '2':
                     buy_order = order
+                    
+            print(latest_two_orders)
+            
+            
+            sell_execution_id = None
+            buy_execution_id = None
 
-            if buy_order:
-                print("買い注文:", buy_order)
-            else:
-                print("買い注文が見つかりませんでした。")
+            for order in latest_two_orders:
+                if order.get('Side') == '1':  # Side が '1' の場合（売り注文）
+                    sell_execution_id = order.get('ExecutionID')
+                elif order.get('Side') == '2':  # Side が '2' の場合（買い注文）
+                    buy_execution_id = order.get('ExecutionID')
 
-            if sell_order:
-                print("売り注文:", sell_order)
-            else:
-                print("売り注文が見つかりませんでした。")
+            # 確認のために出力
+            print("買いの建玉ID:", buy_execution_id)
+            print("売りの建玉ID:", sell_execution_id)
             
             time.sleep(0.2)
             def extract_price_for_position(order):
+                if order is None:
+                    return None
                 return order.get("Price")
+            
             buy_price = extract_price_for_position(buy_order)
             time.sleep(0.2)
             sell_price = extract_price_for_position(sell_order)
+            
+            print("買い価格",buy_price)
+            print("売り価格",sell_price)
 
+           
             if buy_price > sell_price:
-                reverse_buy_price = sell_price
-                reverse_sell_price = buy_price
+                reverse_buy_exit_price = sell_price - 0.1
+                reverse_sell_exit_price = buy_price + 0.1
+                print("買のほうが売よりも価格が高い")
             else:
-                reverse_buy_price = buy_price
-                reverse_sell_price = sell_price
+                reverse_buy_exit_price = buy_price
+                reverse_sell_exit_price = sell_price
+                print("売のほうが買よりも価格が高い")
 
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                future_rev_buy = executor.submit(
-                    self.reverse_limit_order_exit, 
-                    SIDE["BUY"], 
-                    quantity, 
-                    1, 
-                    reverse_buy_price
-                )
-                future_rev_sell = executor.submit(
-                    self.reverse_limit_order_exit, 
-                    SIDE["SELL"], 
-                    quantity, 
-                    2, 
-                    reverse_sell_price
-                )
-                try:
-                    reverse_buy_response = future_rev_buy.result()
-                    self.logger.debug(f"Reverse Buy Order Response: {reverse_buy_response}")
-                    if reverse_buy_response is not None:
-                        self.logger.info(f"逆指値買い注文が成功しました。新しい逆指値の価格は {buy_price} です。")
-                except Exception as e:
-                    self.logger.error(f"逆指値買い注文中にエラーが発生しました: {e}")
-                    reverse_buy_response = None
 
-                try:
-                    reverse_sell_response = future_rev_sell.result()
-                    self.logger.debug(f"Reverse Sell Order Response: {reverse_sell_response}")
-                    if reverse_sell_response is not None:
-                        self.logger.info(f"逆指値売り注文が成功しました。新しい逆指値の価格は {sell_price} です。")
-                except Exception as e:
-                    self.logger.error(f"逆指値売り注文中にエラーが発生しました: {e}")
-                    reverse_sell_response = None
+            print("逆指値の買い決済価格", reverse_buy_exit_price)
+            print("逆指値の売り決済価格", reverse_sell_exit_price)
+            
+            time.sleep(0.2)
+            
+            reverse_buy_exit_response = self.reverse_limit_order_exit(
+                SIDE["SELL"],  #1 売り  2買い 
+                buy_execution_id,
+                quantity, 
+                1,               # underover の値 (#1 以下 #2 以上
+                reverse_buy_exit_price
+            )
+            if reverse_buy_exit_response is not None:
+                self.logger.info(f"買いポジションに対する、逆指値返済注文の指値価格は {reverse_buy_exit_price} です。")
+                
+            time.sleep(0.2)    
+            
+            reverse_sell_exit_response = self.reverse_limit_order_exit(
+                SIDE["BUY"], 
+                sell_execution_id,
+                quantity, 
+                2,               # underover の値 (#1 以下 #2 以上
+                reverse_sell_exit_price
+            )
+            if reverse_sell_exit_response is not None:
+                self.logger.info(f"売りポジションに対する、逆指値返済注文の指値価格は {reverse_sell_exit_price} です。")
 
             time.sleep(0.2)
+            time.sleep(1000)
+            
             reverse_buy_order_id = None
             reverse_sell_order_id = None
             latest_orders = self.get_orders_history(limit=2)
+            
             if latest_orders and len(latest_orders) >= 2:
-                reverse_sell_order_id = latest_orders[-1]['ID']
-                reverse_buy_order_id = latest_orders[-2]['ID']
+                reverse_sell_order_id = latest_orders[-2]['ID']
+                reverse_buy_order_id = latest_orders[-1]['ID']
             else:
                 reverse_sell_order_id = None
                 reverse_buy_order_id = None
                 self.logger.error("最新の注文が取得できなかったため、キャンセル処理を中止します。")
+                
+                
+                
 
             if reverse_buy_order_id or reverse_sell_order_id:
+                # ループ開始前の固定情報表示
+                print(f"買い注文の逆指値返済注文ID: {reverse_buy_order_id}")
+                print(f"売り注文の逆指値返済注文ID: {reverse_sell_order_id}")
+                
+                loop_count = 0
                 while True:
+                    loop_count += 1
+                    # 状態確認のヘッダー（簡潔に）
+                    # print(f"\n--- 監視状態確認 #{loop_count} ---")
+                    
+                    # どちらかの注文IDがNoneになったら監視終了
+                    if not reverse_buy_order_id and not reverse_sell_order_id:
+                        print("✅ 両方の注文が処理済み - 監視終了")
+                        break
+
+                    # 約定状態の確認
                     buy_filled = reverse_buy_order_id and self.is_order_filled(reverse_buy_order_id)
                     sell_filled = reverse_sell_order_id and self.is_order_filled(reverse_sell_order_id)
                     
-                    time.sleep(0.2)
+                    # 状態変化があった場合のみ詳細表示
+                    if buy_filled or sell_filled:
+                        print("🔔 注文状態の変化を検知")
+                        print(f"  買い注文: {'約定' if buy_filled else '未約定'}")
+                        print(f"  売り注文: {'約定' if sell_filled else '未約定'}")
+                    
+                    # 買いポジションの逆指値注文が約定した場合
                     if buy_filled:
+                        print(f"\n📈 買い注文 {reverse_buy_order_id} が約定")
                         if reverse_sell_order_id:
-                            self.logger.info(f"逆指値買い注文({reverse_buy_order_id})が約定しました。逆指値売り注文({reverse_sell_order_id})をキャンセルします。")
-                            self.cancel_order(reverse_sell_order_id)
+                            print(f"  → 売り注文 {reverse_sell_order_id} をキャンセル実行")
+                            self.logger.info(f"買いポジション逆指値注文({reverse_buy_order_id})が約定したため、"
+                                           f"売りポジション逆指値注文({reverse_sell_order_id})をキャンセルします。")
+                            cancel_result = self.cancel_order(reverse_sell_order_id)
+                            print(f"  キャンセル結果: {cancel_result}")
                         reverse_buy_order_id = None
-                        
-                    time.sleep(0.2)
-                    if sell_filled:
-                        if reverse_buy_order_id:
-                            self.logger.info(f"逆指値売り注文({reverse_sell_order_id})が約定しました。逆指値買い注文({reverse_buy_order_id})をキャンセルします。")
-                            self.cancel_order(reverse_buy_order_id)
                         reverse_sell_order_id = None
-                        
+                        break
+                    
+                    # 売りポジションの逆指値注文が約定した場合
+                    if sell_filled:
+                        print(f"\n📉 売り注文 {reverse_sell_order_id} が約定")
+                        if reverse_buy_order_id:
+                            print(f"  → 買い注文 {reverse_buy_order_id} をキャンセル実行")
+                            self.logger.info(f"売りポジション逆指値注文({reverse_sell_order_id})が約定したため、"
+                                           f"買いポジション逆指値注文({reverse_buy_order_id})をキャンセルします。")
+                            cancel_result = self.cancel_order(reverse_buy_order_id)
+                            print(f"  キャンセル結果: {cancel_result}")
+                        reverse_sell_order_id = None
+                        reverse_buy_order_id = None
+                        break
+                    
                     time.sleep(0.2)
+                
+                # 監視終了時の表示
+                print("\n====== 逆指値注文の監視終了 ======")
+                print(f"総監視回数: {loop_count}")
+                print("================================\n")
+                    
+            
 
             # ======== Stage2 ========
             # Stage2の処理部分（ループ内で価格監視と決済条件判定を行う）
+            positions = self.get_positions()
+            # print("取得したポジション:", positions)
+            
+            # 単一のポジション情報を取得
+            # 最後のポジション（最新のポジション）を取得
+            active_positions = [p for p in positions if p.get('LeavesQty', 0) > 0]
+            if not active_positions:
+                print("❌ アクティブなポジションが見つかりません")
+                return
+                
+            position = active_positions[-1]  # 最後のアクティブなポジションを使用
+            side = position.get('Side')
+            quantity = position.get('LeavesQty')
+            execution_id = position.get('ExecutionID')
+            
+            print("\n📊 監視対象ポジション:")
+            print(f"  タイプ: {'売り' if side == '1' else '買い'} (Side: {side})")
+            print(f"  数量: {quantity}")
+            print("================================\n")
+
             if not hasattr(self, "price_history") or self.price_history is None:
                 self.price_history = deque(maxlen=3)
-
-            fetch_interval = 0.2
+                print("価格履歴キューを初期化しました")
 
             while True:
                 try:
-                    current_price = self.fetch_current_price()
+                    current_price = self.trading_data.fetch_current_price()
                     self.price_history.append(current_price)
                     self.logger.info(f"価格履歴: {list(self.price_history)}")
 
                     if len(self.price_history) == 3:
                         price_t2, price_t1, price_t0 = self.price_history
-                        # ここに決済条件判定とIOC注文発行のロジックを配置
-                        # 条件に該当したらbreakしてStage2を終了
-                        # 例: if favorable_condition: break
-                        pass
+                        
+                        # 売りポジションの決済条件判定
+                        if side == '1':  # 売りポジション
+                            if price_t2 > price_t1 and price_t0 > price_t1:
+                                print("\n📉 売りポジションの決済条件を検出")
+                                print(f"  価格推移: {price_t2} > {price_t1} < {price_t0}")
+                                ioc_price = sell_price
+                                response = self.exit_ioc_order(
+                                    side="2",  # 買い注文で決済
+                                    quantity=quantity,
+                                    HoldID=execution_id,
+                                    price=ioc_price
+                                )
+                                if response:
+                                    self.logger.info(f"売りポジション決済IOC注文発行: 価格={ioc_price}")
+                                    first_cycle = False
+                                    break
+                        
+                        # 買いポジションの決済条件判定
+                        elif side == '2':  # 買いポジション
+                            if price_t2 < price_t1 and price_t0 < price_t1:
+                                print("\n📈 買いポジションの決済条件を検出")
+                                print(f"  価格推移: {price_t2} < {price_t1} > {price_t0}")
+                                ioc_price = buy_price
+                                response = self.exit_ioc_order(
+                                    side="1",  # 売り注文で決済
+                                    quantity=quantity,
+                                    HoldID=execution_id,
+                                    price=ioc_price
+                                )
+                                if response:
+                                    self.logger.info(f"買いポジション決済IOC注文発行: 価格={ioc_price}")
+                                    first_cycle = False
+                                    break
 
-                    time.sleep(fetch_interval)
+                    time.sleep(1.5)
 
                 except Exception as e:
                     self.logger.error(f"フェーズ2でエラー発生: {e}")
-                    time.sleep(fetch_interval)
-
-                # 有利な決済条件でbreakするロジックを挿入
-
-            # Stage2終了後、無限ループの先頭に戻り、再びStage1が実行される
+                    print(f"❌ エラー発生: {e}")
+                    time.sleep(0.2)
  
         
         
@@ -657,10 +757,10 @@ class OrderExecutor:
                 # contentがリストであることを確認
                 if not isinstance(content, list):
                     self.logger.error(f"期待していたリストではなく、{type(content)}が返されました。内容: {content}")
-                    return None
+                    return []  # Noneではなく空リストを返す
                 if not content:
                     self.logger.warning("ポジションデータが空です。")
-                    return None
+                    return []  # Noneではなく空リストを返す
                 return content
         except urllib.error.HTTPError as e:
             self.logger.error(f"HTTPエラーが発生しました: {e}")
@@ -669,10 +769,10 @@ class OrderExecutor:
                 pprint(error_content)
             except Exception:
                 self.logger.error("エラー内容の解析に失敗しました。")
-            return None
+            return []  # エラー発生時も空リストを返す
         except Exception as e:
             self.logger.error(f"ポジション取得中に例外が発生しました: {e}")
-            return None
+            return []  # 例外発生時も空リストを返す
 
     """
     注文履歴取得
@@ -718,119 +818,6 @@ class OrderExecutor:
             print("例外発生:", e)
             return None
 
-# ================================
-# API パラメータ定義
-# ================================
-
-# 【ヘッダー パラメータ】
-# X-API-KEY (必須, string): トークン発行メソッドで取得した文字列
-
-# 【リクエストボディ スキーマ: application/json】
-# Password (必須, string): 注文パスワード
-# Symbol (必須, string): 銘柄コード
-# Exchange (必須, integer <int32>): 市場コード
-#   定義値:
-#     1: 東証
-#     3: 名証
-#     5: 福証
-#     6: 札証
-# SecurityType (必須, integer <int32>): 商品種別
-#   定義値:
-#     1: 株式
-# Side (必須, string): 売買区分
-#   定義値:
-#     1: 売
-#     2: 買
-# CashMargin (必須, integer <int32>): 信用区分
-#   定義値:
-#     1: 現物
-#     2: 新規
-#     3: 返済
-# MarginTradeType (integer <int32>): 信用取引区分
-#   ※現物取引の場合は指定不要。
-#   ※信用取引の場合、必須。
-#   定義値:
-#     1: 制度信用
-#     2: 一般信用（長期）
-#     3: 一般信用（デイトレ）
-# MarginPremiumUnit (number <double>): 1株あたりのプレミアム料(円)
-#   ※プレミアム料の刻値は、プレミアム料取得APIのレスポンスにある"TickMarginPremium"にて確認。
-#   ※入札受付中(19:30～20:30)プレミアム料入札可能銘柄の場合、「MarginPremiumUnit」は必須。
-#   ※それ以外の場合、「MarginPremiumUnit」の記載は無視。
-#   ※入札受付中以外の時間帯では、「MarginPremiumUnit」の記載は無視。
-# DelivType (必須, integer <int32>): 受渡区分
-#   ※現物買は指定必須。
-#   ※現物売は「0(指定なし)」を設定。
-#   ※信用新規は「0(指定なし)」を設定。
-#   ※信用返済は指定必須。
-#   ※auマネーコネクトが有効の場合にのみ、「3」を設定可能。
-#   定義値:
-#     0: 指定なし
-#     2: お預り金
-#     3: auマネーコネクト
-# FundType (string): 資産区分（預り区分）
-#   ※現物買は指定必須。
-#   ※現物売は「  」（半角スペース2つ）を指定必須。
-#   ※信用新規と信用返済は「11」を指定するか、指定なしでも可。指定しない場合は「11」が自動的にセットされます。
-#   定義値:
-#     (半角スペース2つ): 現物売の場合
-#     02: 保護
-#     AA: 信用代用
-#     11: 信用取引
-# AccountType (必須, integer <int32>): 口座種別
-#   定義値:
-#     2: 一般
-#     4: 特定
-#     12: 法人
-# Qty (必須, integer <int32>): 注文数量
-#   ※信用一括返済の場合、返済したい合計数量を入力。
-# ClosePositionOrder (integer <int32>): 決済順序
-#   ※信用返済の場合、必須。
-#   ※ClosePositionOrderとClosePositionsはどちらか一方のみ指定可能。
-#   ※ClosePositionOrderとClosePositionsを両方指定した場合、エラー。
-#   定義値:
-#     0: 日付（古い順）、損益（高い順）
-#     1: 日付（古い順）、損益（低い順）
-#     2: 日付（新しい順）、損益（高い順）
-#     3: 日付（新しい順）、損益（低い順）
-#     4: 損益（高い順）、日付（古い順）
-#     5: 損益（高い順）、日付（新しい順）
-#     6: 損益（低い順）、日付（古い順）
-#     7: 損益（低い順）、日付（新しい順）
-# ClosePositions (Array of objects): 返済建玉指定
-#   ※信用返済の場合、必須。
-#   ※ClosePositionOrderとClosePositionsはどちらか一方のみ指定可能。
-#   ※ClosePositionOrderとClosePositionsを両方指定した場合、エラー。
-#   ※信用一括返済の場合、各建玉IDと返済したい数量を入力。
-#   ※建玉IDは「E」から始まる番号です。
-# FrontOrderType (必須, integer <int32>): 執行条件
-#   定義値:
-#     10: 成行 (Price: 0)
-#     13: 寄成（前場） (Price: 0)
-#     14: 寄成（後場） (Price: 0)
-#     15: 引成（前場） (Price: 0)
-#     16: 引成（後場） (Price: 0)
-#     17: IOC成行 (Price: 0)
-#     20: 指値 (発注金額を指定)
-#     21: 寄指（前場） (発注金額を指定)
-#     22: 寄指（後場） (発注金額を指定)
-#     23: 引指（前場） (発注金額を指定)
-#     24: 引指（後場） (発注金額を指定)
-#     25: 不成（前場） (発注金額を指定)
-#     26: 不成（後場） (発注金額を指定)
-#     27: IOC指値 (発注金額を指定)
-#     30: 逆指値 (Priceは指定なし、AfterHitPriceで指定)
-#   ※AfterHitPriceで指定ください
-# Price (必須, number <double>): 注文価格
-#   ※FrontOrderTypeで成行を指定した場合、0を指定。
-#   ※FrontOrderTypeに応じた価格指定が必要。
-# ExpireDay (必須, integer <int32>): 注文有効期限
-#   yyyyMMdd形式。
-#   0: 本日 (引けまでの間は当日、引け後は翌取引所営業日、休前日は休日明けの取引所営業日)
-#   ※ 日替わりはkabuステーションが日付変更通知を受信したタイミングです。
-# ReverseLimitOrder (object): 逆指値条件
-#   ※FrontOrderTypeで逆指値を指定した場合のみ必須。
-
 
     """
     新規
@@ -874,9 +861,155 @@ class OrderExecutor:
         self.logger.debug(f"{side} order finished at {end_time.strftime('%H:%M:%S.%f')}")
             
         return content
-        
+
 
     """
+    逆指値返済
+    """
+    def reverse_limit_order_exit(self, side, HoldID, quantity, underover, limit_price):
+        obj = {
+            'Password': self.order_password,
+            'Symbol': self.init.symbol,
+            'Exchange': 1,
+            'SecurityType': 1,      
+            'Side': side,           
+            'CashMargin': 3,     
+            'MarginTradeType': 3,                   
+            'DelivType': 2,                 
+            'AccountType': 4,                   
+            'Qty': quantity,  
+            "ClosePositions": [
+                {
+                    "HoldID": HoldID,
+                    "Qty": quantity
+                }
+            ],       
+            'FrontOrderType': 30,                    
+            'ExpireDay': 0,                
+            'ReverseLimitOrder': {
+                'TriggerSec': 1,         # 1.発注銘柄 2.NK225指数 3.TOPIX指数
+                'TriggerPrice': limit_price,
+                'UnderOver': underover,  # 1.以下 2.以上
+                'AfterHitOrderType': 2,  # 1.成行 2.指値 3.不成
+                'AfterHitPrice': limit_price
+            }
+        }
+        
+        print("\n📋 注文パラメータ:")
+        for key, value in obj.items():
+            if key != 'Password':
+                print(f"  {key}: {value}")
+        
+        json_data = json.dumps(obj).encode('utf-8')
+        url = f"{API_BASE_URL}/sendorder"
+        
+        req = urllib.request.Request(url, json_data, method='POST')
+        req.add_header('Content-Type', 'application/json')
+        req.add_header('X-API-KEY', self.init.token)
+        
+        try:
+            print("\n🌐 API通信開始...")
+            with urllib.request.urlopen(req) as res:
+                response_data = res.read().decode('utf-8')
+                content = json.loads(response_data)
+                
+                print("\n📬 APIレスポンス:")
+                print(f"  ステータス: {res.status} ({res.reason})")
+                print(f"  レスポンス: {content}")
+                
+                if content.get('Result') == 0:
+                    print("✅ 注文送信成功")
+                    order_id = content.get('OrderId')
+                    if order_id:
+                        print(f"  注文ID: {order_id}")
+                else:
+                    print("❌ 注文送信失敗")
+                    print(f"  エラーコード: {content.get('Result')}")
+                    print(f"  エラーメッセージ: {content.get('Message')}")
+                
+                return content
+
+        except Exception as e:
+            error_msg = f"逆指値注文送信中にエラー: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            print(f"\n❌ エラー発生")
+            print(f"  {error_msg}")
+            return None
+        
+    
+    """
+    IOC返済
+    """
+    def exit_ioc_order(self, side, quantity, HoldID, price):
+        obj = {
+            'Password': self.order_password,
+            'Symbol': self.init.symbol,
+            'Exchange': 1,
+            'SecurityType': 1,
+            'Side': side,
+            'CashMargin': 3, 
+            'MarginTradeType': 3,  
+            'DelivType': 2, 
+            'AccountType': 4,
+            'Qty': quantity,
+            "ClosePositions": [
+                {
+                    "HoldID": HoldID,
+                    "Qty": quantity
+                }
+            ],      
+            'FrontOrderType': 27,  # IOC指値（返済時のみ）
+            'Price': price,
+            'ExpireDay': 0 
+        }
+        
+        print("\n📋 注文パラメータ:")
+        for key, value in obj.items():
+            if key != 'Password':  # パスワードは表示しない
+                print(f"  {key}: {value}")
+                
+        json_data = json.dumps(obj).encode('utf-8')
+        url = f"{API_BASE_URL}/sendorder"
+        req = urllib.request.Request(url, json_data, method='POST')
+        req.add_header('Content-Type', 'application/json')
+        req.add_header('X-API-KEY', self.init.token)
+
+        try:
+            print("\n🌐 API通信開始...")
+            with urllib.request.urlopen(req) as res:
+                status_msg = f"ステータス: {res.status} ({res.reason})"
+                print(f"  {status_msg}")
+                self.logger.info(f"IOC返済注文送信成功: {status_msg}")
+                
+                content = json.loads(res.read())
+                print("\n📬 APIレスポンス:")
+                print(f"  {content}")
+                
+                # レスポンスの解析
+                if content.get('Result') == 0:
+                    print("✅ 注文送信成功")
+                    order_id = content.get('OrderId')
+                    if order_id:
+                        print(f"  注文ID: {order_id}")
+                else:
+                    print("❌ 注文送信失敗")
+                    print(f"  エラーコード: {content.get('Result')}")
+                    print(f"  エラーメッセージ: {content.get('Message')}")
+
+                print("====================\n")
+                return content
+
+        except Exception as e:
+            error_msg = f"IOC返済注文送信中にエラーが発生: {str(e)}"
+            print(f"\n❌ エラー発生")
+            print(f"  {error_msg}")
+            self.logger.error(error_msg)
+            print("====================\n")
+            return None
+        
+        
+        
+        """
     返済
     """    
     def exit_order(self, side, quantity):
@@ -912,52 +1045,6 @@ class OrderExecutor:
             return None
 
     """
-    逆指値返済
-    """
-    def reverse_limit_order_exit(self, side, quantity, underover, limit_price):
-        obj = {
-            'Password': self.order_password,
-            'Symbol': self.init.symbol,
-            'Exchange': 1,
-            'SecurityType': 1,      
-            'Side': side,           
-            'CashMargin': 3,     
-            'MarginTradeType': 3,                   
-            'DelivType': 0,                 
-            'AccountType': 4,                   
-            'Qty': quantity,         
-            'FrontOrderType': 30,
-            'Price': 0,                      
-            'ExpireDay': 0,                
-            'ReverseLimitOrder': {
-                'TriggerSec': 1,         # 1.発注銘柄 2.NK225指数 3.TOPIX指数
-                'TriggerPrice': limit_price,
-                'UnderOver': underover,  # 1.以下 2.以上
-                'AfterHitOrderType': 2,  # 1.成行 2.指値 3.不成
-                'AfterHitPrice': limit_price
-            }
-        }
-        json_data = json.dumps(obj).encode('utf-8')
-        url = f"{API_BASE_URL}/sendorder"
-        req = urllib.request.Request(url, json_data, method='POST')
-        req.add_header('Content-Type', 'application/json') 
-        req.add_header('X-API-KEY', self.init.token)    
-
-        try:
-            with urllib.request.urlopen(req) as res:
-                # self.logger.info(f"逆指値注文送信成功: {res.status} {res.reason}")
-                content = json.loads(res.read())
-                return content
-        except urllib.error.HTTPError as e:
-            error_content = e.read().decode('utf-8')
-            self.logger.error(f"HTTPError: {e.code} {e.reason}")
-            self.logger.error(f"レスポンス内容: {error_content}")
-            return None
-        except Exception as e:
-            self.logger.error(f"逆指値注文送信中にエラーが発生しました: {e}")
-            return None
-
-    """
     IOC注文
     """
     def ioc_order(self, side, quantity, price):
@@ -989,39 +1076,4 @@ class OrderExecutor:
                 return content
         except Exception as e:
             self.logger.error(f"IOC注文送信中にエラーが発生しました: {e}")
-            return None
-
-    """
-    IOC返済
-    """
-    def exit_ioc_order(self, side, quantity, price):
-        obj = {
-            'Password': self.order_password,
-            'Symbol': self.init.symbol,
-            'Exchange': 1,
-            'SecurityType': 1,
-            'Side': side,
-            'CashMargin': 3, 
-            'MarginTradeType': 3,  
-            'DelivType': 2, 
-            'AccountType': 4,
-            'Qty': quantity,
-            'ClosePositionOrder': 0,  # 日付（古い順）、損益（高い順）で決済
-            'FrontOrderType': 27,  # IOC指値（返済時のみ）
-            'Price': price,
-            'ExpireDay': 0 
-        }
-        json_data = json.dumps(obj).encode('utf-8')
-        url = f"{API_BASE_URL}/sendorder"
-        req = urllib.request.Request(url, json_data, method='POST')
-        req.add_header('Content-Type', 'application/json')
-        req.add_header('X-API-KEY', self.init.token)
-
-        try:
-            with urllib.request.urlopen(req) as res:
-                self.logger.info(f"IOC返済注文送信成功: {res.status} {res.reason}")
-                content = json.loads(res.read())
-                return content
-        except Exception as e:
-            self.logger.error(f"IOC返済注文送信中にエラーが発生しました: {e}")
             return None
