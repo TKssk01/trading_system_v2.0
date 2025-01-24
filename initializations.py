@@ -7,7 +7,35 @@ class Initializations:
     def __init__(self):
         # API関連の設定
         self.token = None
-        self.symbol = "9434"
+        #NTT 156.8
+        # self.symbol = "9434"
+        #インデックス 295~300
+        # self.symbol = "1579"
+        # self.symbol = "9432"
+        
+        # 住友化学
+        # self.symbol = "4005"
+        
+        # 総医研HD
+        # 163
+        # self.symbol = "2385"
+        
+        # アイフル
+        # 323
+        # self.symbol = "8515"
+        
+        # 福島銀行
+        # 223
+        # self.symbol = "8562"
+        
+        # 福島銀行
+        # 368
+        self.symbol = "5202"
+        
+        # 三菱自
+        # 368
+        self.symbol = "7211"
+        
         self.exchange = 1
         self.api_base_url = "http://localhost:18080/kabusapi"
         self.order_password = "1995tAkA@@"

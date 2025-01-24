@@ -53,8 +53,8 @@ class TradingData:
             return df1
         # インデックスの重複の可能性がある場合は、以下のように調整する
         df2_cleaned.index = pd.RangeIndex(start=len(df1), stop=len(df1) + len(df2_cleaned))
-        return pd.concat([df1, df2_cleaned], ignore_index=True) # ignore_indexを変更
-
+        # return pd.concat([df1, df2_cleaned], ignore_index=True) # ignore_indexを変更
+        return pd.concat([df1, df2_cleaned], ignore_index=True, copy=False).astype(df1.dtypes)
 
     # データの表示
     def display_interpolated_data(self):
@@ -353,7 +353,7 @@ class TradingData:
                 fetched_price = board.get('CurrentPrice')
                 if fetched_price is not None:
                     self.init.prices.append(fetched_price)
-                    self.logger.info(f"取得した価格: {fetched_price}")
+                    # self.logger.info(f"取得した価格: {fetched_price}")
                     
                     # previous_price と current_price を更新
                     if self.init.current_price is not None:
@@ -418,9 +418,11 @@ class TradingData:
                 # new_row_dfが空でない場合のみ結合
                 # if not new_row_df.empty:
                 #     self.init.interpolated_data = pd.concat([self.init.interpolated_data, new_row_df])
+                new_row_df = new_row_df.dropna(axis=1, how='all')  # 全てNAの列を削除
+                self.init.interpolated_data = pd.concat([self.init.interpolated_data, new_row_df], ignore_index=False)
 
                 # ヘルパー関数を使用して安全に連結
-                self.init.interpolated_data = self.safe_concat(self.init.interpolated_data, new_row_df)
+                # self.init.interpolated_data = self.safe_concat(self.init.interpolated_data, new_row_df)
         else:
             # Buy and Hold Equityを更新
             if not self.init.interpolated_data.empty:
