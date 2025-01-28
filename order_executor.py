@@ -138,6 +138,7 @@ class OrderExecutor:
                 }
                 if signals.get('buy', 0) == 1 or signals.get('sell', 0) == 1:
                     self.new_order(SIDE["BUY"], quantity)
+                    time.sleep(0.8)
                     self.new_order(SIDE["SELL"], quantity)
                     # ロングとショートの同時エントリーを並行処理で実行
                     # with ThreadPoolExecutor(max_workers=2) as executor:
@@ -161,7 +162,7 @@ class OrderExecutor:
             else:
                 # 2回目以降のサイクルではシグナルチェックをスキップ
                 self.new_order(SIDE["BUY"], quantity)
-                time.sleep(0.2)
+                time.sleep(0.8)
                 self.new_order(SIDE["SELL"], quantity)
                 # with ThreadPoolExecutor(max_workers=2) as executor:
                 #     future_buy = executor.submit(self.new_order, SIDE["BUY"], quantity)
@@ -178,7 +179,7 @@ class OrderExecutor:
                 #         except Exception as e:
                 #             self.logger.error(f"注文処理中にエラーが発生しました: {e}")
 
-            time.sleep(0.2)                
+            time.sleep(0.25)                
             position = self.get_positions(params=None)
             
             # 最新の2件の注文を含むリストからそれぞれ買いと売りの注文を判定して取得
@@ -206,8 +207,8 @@ class OrderExecutor:
                     buy_execution_id = order.get('ExecutionID')
 
             # 確認のために出力
-            print("買いの建玉ID:", buy_execution_id)
-            print("売りの建玉ID:", sell_execution_id)
+            # print("買いの建玉ID:", buy_execution_id)
+            # print("売りの建玉ID:", sell_execution_id)
             
             time.sleep(0.2)
             def extract_price_for_position(order):
@@ -229,15 +230,23 @@ class OrderExecutor:
             if buy_price > sell_price:
                 # 買い価格が売り価格より高い場合
                 # 売り決済は市場価格より低く、買い決済は市場価格より高く設定
-                reverse_buy_exit_sell_order_price = current_market_price - 0.1
-                reverse_sell_exit_buy_order_price = current_market_price + 0.1
-                print("買のほうが売よりも価格が高い")
+                if current_market_price == sell_price:
+                    reverse_buy_exit_sell_order_price = round(current_market_price - 0.1, 1)
+                    reverse_sell_exit_buy_order_price = round(current_market_price + 0.1, 1)
+                else:
+                    reverse_buy_exit_sell_order_price = round(current_market_price + 0.1, 1)
+                    reverse_sell_exit_buy_order_price = round(current_market_price - 0.1, 1)
+                # print("買のほうが売よりも価格が高い")
             else:
                 # 売り価格が買い価格より高い場合
                 # 同様に市場価格からずらして設定
-                reverse_buy_exit_sell_order_price = min(buy_price, current_market_price - 0.1)
-                reverse_sell_exit_buy_order_price = max(sell_price, current_market_price + 0.1)
-                print("売のほうが買よりも価格が高い")
+                if current_market_price == sell_price:
+                    reverse_buy_exit_sell_order_price = round(current_market_price - 0.1, 1)
+                    reverse_sell_exit_buy_order_price = round(current_market_price + 0.1, 1)
+                else:
+                    reverse_buy_exit_sell_order_price = round(current_market_price + 0.1, 1)
+                    reverse_sell_exit_buy_order_price = round(current_market_price - 0.1, 1)
+                # print("売のほうが買よりも価格が高い")
                 
             # 価格を小数点第一位で丸める処理を追加
             reverse_buy_exit_sell_order_price = round(reverse_buy_exit_sell_order_price, 1)
@@ -247,11 +256,13 @@ class OrderExecutor:
             # print("逆指値の売り決済価格", reverse_sell_exit_buy_order_price)
             
             time.sleep(0.2)
+            slide_price = 0.1
+            max_retry_count = 100 
             
             # 買いポジションの決済（売り注文）の場合
             try:
-                retry_count = 0
-                while retry_count < 10:
+                retry_count = 0  
+                while retry_count < max_retry_count:
                     try:
                         reverse_buy_exit_response = self.reverse_limit_order_exit(
                             SIDE["SELL"],  #1 売り  2買い 
@@ -267,11 +278,12 @@ class OrderExecutor:
                             break  # 成功した場合はループを抜ける
                         else:
                             retry_count += 1
-                            if retry_count == 10:
+                            if retry_count == max_retry_count:
                                 print("最大再試行回数に達しました。処理を中止します。")
                                 raise Exception("決済注文が失敗しました")
-                            print(f"売り決済注文を0.3円下げて再試行します（試行回数: {retry_count}/{10})")
-                            reverse_buy_exit_sell_order_price = round(reverse_buy_exit_sell_order_price - 0.3, 1)  # 売り注文の場合は価格を下げて小数点第1位に丸める
+                            time.sleep(0.1)
+                            print(f"売り決済注文を{slide_price}円下げて再試行します（試行回数: {retry_count}/{max_retry_count})")
+                            reverse_buy_exit_sell_order_price = round(reverse_buy_exit_sell_order_price - slide_price, 1)  # 売り注文の場合は価格を下げて小数点第1位に丸める
                             continue
                             
                     except urllib.error.HTTPError as e:
@@ -279,9 +291,9 @@ class OrderExecutor:
                         retry_count += 1
                         
                         if error_content.get('Code') == 100217:  # 即時約定エラーの場合
-                            print(f"売り決済注文を0.3円下げて再試行します（試行回数: {retry_count}/{10})")
-                            reverse_buy_exit_sell_order_price = round(reverse_buy_exit_sell_order_price - 0.3, 1)  # 売り注文の場合は価格を下げて小数点第1位に丸める
-                            if retry_count == 3:
+                            print(f"売り決済注文を{slide_price}円下げて再試行します（試行回数: {retry_count}/{max_retry_count})")
+                            reverse_buy_exit_sell_order_price = round(reverse_buy_exit_sell_order_price - slide_price, 1)  # 売り注文の場合は価格を下げて小数点第1位に丸める
+                            if retry_count == max_retry_count:
                                 print("最大再試行回数に達しました。処理を中止します。")
                                 raise
                             continue
@@ -297,7 +309,7 @@ class OrderExecutor:
             # 売りポジションの決済（買い注文）の場合
             try:
                 retry_count = 0
-                while retry_count < 10:
+                while retry_count < max_retry_count:
                     try:
                         reverse_sell_exit_response = self.reverse_limit_order_exit(
                             SIDE["BUY"],  #1 売り  2買い 
@@ -313,20 +325,21 @@ class OrderExecutor:
                             break  # 成功した場合はループを抜ける
                         else:
                             retry_count += 1
-                            if retry_count == 10:
+                            if retry_count == max_retry_count:
                                 print("最大再試行回数に達しました。処理を中止します。")
                                 raise Exception("決済注文が失敗しました")
-                            print(f"買い決済注文を0.3円上げて再試行します（試行回数: {retry_count}/{10})")
-                            reverse_sell_exit_buy_order_price = round(reverse_sell_exit_buy_order_price + 0.3, 1)  # 買い注文の場合は価格を上げて小数点第1位に丸める
+                            time.sleep(0.1)
+                            print(f"買い決済注文を{slide_price}円上げて再試行します（試行回数: {retry_count}/{max_retry_count})")
+                            reverse_sell_exit_buy_order_price = round(reverse_sell_exit_buy_order_price + slide_price, 1)  # 買い注文の場合は価格を上げて小数点第1位に丸める
                             continue
                     except urllib.error.HTTPError as e:
                         error_content = json.loads(e.read())
                         retry_count += 1
                         
                         if error_content.get('Code') == 100217:  # 即時約定エラーの場合
-                            print(f"買い決済注文を0.3円上げて再試行します（試行回数: {retry_count}/{10})")
-                            reverse_sell_exit_buy_order_price = round(reverse_sell_exit_buy_order_price + 0.3, 1)  # 買い注文の場合は価格を上げて小数点第1位に丸める
-                            if retry_count == 3:
+                            print(f"買い決済注文を{slide_price}円上げて再試行します（試行回数: {retry_count}/{max_retry_count})")
+                            reverse_sell_exit_buy_order_price = round(reverse_sell_exit_buy_order_price + slide_price, 1)  # 買い注文の場合は価格を上げて小数点第1位に丸める
+                            if retry_count == max_retry_count:
                                 print("最大再試行回数に達しました。処理を中止します。")
                                 raise
                             continue
@@ -355,9 +368,9 @@ class OrderExecutor:
                 
             if reverse_buy_order_id or reverse_sell_order_id:
                 # ループ開始前の固定情報表示
-                print(f"\n売り注文の逆指値返済注文ID(買い注文): {reverse_buy_order_id}")
+                # print(f"\n売り注文の逆指値返済注文ID(買い注文): {reverse_buy_order_id}")
                 print(f"売り注文の逆指値返済注文価格(買い注文): {reverse_sell_exit_buy_order_price}")
-                print(f"買い注文の逆指値返済注文ID(売り注文): {reverse_sell_order_id}")
+                # print(f"買い注文の逆指値返済注文ID(売り注文): {reverse_sell_order_id}")
                 print(f"買い注文の逆指値返済注文価格(売り注文): {reverse_buy_exit_sell_order_price}")
                 print("\n====== 逆指値注文の完了待機 ======")
             
@@ -387,6 +400,8 @@ class OrderExecutor:
                         if reverse_sell_order_id:
                             # print(f"売り注文 {reverse_sell_order_id} をキャンセル実行")
                             print(f"売り注文をキャンセル実行")
+                            current_market_price = self.trading_data.fetch_current_price()
+                            print(f"逆指値返済注文が約定した時の市場価格: {current_market_price}")
                             cancel_result = self.cancel_order(reverse_sell_order_id)
                         reverse_buy_order_id = None
                         reverse_sell_order_id = None
@@ -399,22 +414,26 @@ class OrderExecutor:
                         if reverse_buy_order_id:
                             # print(f"買い注文 {reverse_buy_order_id} をキャンセル実行")
                             print(f"買い注文をキャンセル実行")
+                            current_market_price = self.trading_data.fetch_current_price()
+                            print(f"逆指値返済注文が約定した時の市場価格: {current_market_price}")
                             cancel_result = self.cancel_order(reverse_buy_order_id)
                         reverse_sell_order_id = None
                         reverse_buy_order_id = None
                         break
                     
+                    # current_market_price = self.trading_data.fetch_current_price()
+                    # print(f"現在の市場価格: {current_market_price}")
                     time.sleep(0.2)
                 
                 # 監視終了時の表示
                 print("====== 逆指値注文の監視終了 ======")
                     
             
-            time.sleep(0.1)
+            time.sleep(0.3)
             # ======== Stage2 ========
             # Stage2の処理部分（ループ内で価格監視と決済条件判定を行う）
             positions = self.get_positions()
-            # print("取得したポジション:", positions)
+            # print("取得したポジション:", positions[-1])
             
             # 最後のポジション（最新のポジション）を取得
             active_positions = [p for p in positions if p.get('LeavesQty', 0) > 0]
@@ -423,6 +442,8 @@ class OrderExecutor:
                 return
                 
             position = active_positions[-1]  # 最後のアクティブなポジションを使用
+            # position_2 = active_positions[-2:]
+            print("取得したポジション:", position)
             side = position.get('Side')
             # quantity = position.get('LeavesQty')
             execution_id = position.get('ExecutionID')
@@ -434,9 +455,9 @@ class OrderExecutor:
             # print(f"ポジション約定価格: {position_price}")
             # 売りポジションの場合はsell_price、買いポジションの場合はbuy_priceを表示
             if side == '1':  # 売りポジション
-                print(f"決済用IOC指値価格(sell_price): {position_price}")
+                print(f"決済用IOC指値価格(sell_price): {sell_price}")
             else:  # 買いポジション
-                print(f"決済用IOC指値価格(buy_price): {position_price}")
+                print(f"決済用IOC指値価格(buy_price): {buy_price}")
             # print(f"数量: {quantity}")
 
             if not hasattr(self, "price_history") or self.price_history is None:
@@ -446,6 +467,7 @@ class OrderExecutor:
                 try:
                     # 現在の価格を取得
                     current_price = self.trading_data.fetch_current_price()
+                    # print(f"現在の価格: {current_price}")
                     
                     # 価格が前回と異なる場合のみ処理を実行
                     if not self.price_history or current_price != self.price_history[-1]:
@@ -457,50 +479,87 @@ class OrderExecutor:
                             
                             # 売りポジションの決済条件判定
                             if side == '1':  # 売りポジション
-                                if price_t2 > price_t1 and price_t0 > price_t1:
+                                if (price_t2 > price_t1 and price_t0 > price_t1 and price_t2 < sell_price and price_t1 < sell_price and price_t0 < sell_price):
                                     print("\n売りポジションの決済条件を検出")
                                     print(f"価格推移: {price_t2} > {price_t1} < {price_t0}")
                                     # ioc_price = reverse_sell_exit_buy_order_price
-                                    ioc_price = position_price
+                                    # 現在の市場価格を取得
+                                    current_market_price = self.trading_data.fetch_current_price()
+                                    
+                                    # 約定価格と市場価格を比較して決済価格を決定
+                                    if sell_price == current_market_price:
+                                        ioc_price = round(current_market_price - 0.1, 1)
+                                        print(f"市場価格と約定価格が同じため、市場価格-0.1円で決済: {ioc_price}")
+                                    else:
+                                        ioc_price = sell_price
+                                        print(f"約定価格で決済: {ioc_price}")
+                                    
                                     response = self.exit_ioc_order(
                                         side="2",  # 買い注文で決済
                                         quantity=quantity,
                                         HoldID=execution_id,
                                         price=ioc_price
                                     )
-                                    # responseの結果に関わらずループを抜ける
-                                    if response is not None:
-                                        print("IOC指値決済完了 - 次の新規注文を入れます")
-                                    else:
-                                        print("IOC指値決済は失敗しましたが、次の新規注文に進みます")
                                     time.sleep(0.2)
-                                    break  # responseの結果に関わらずbreakする
+                                    orders_history = self.get_orders_history(limit=1)
+                                    # print(orders_history[-1])
+                                    latest_order_ioc = orders_history[-1]
+                                    last_detail = latest_order_ioc['Details'][-1]
+                                    
+                                    # RecType=3（期限切れ）の場合
+                                    if last_detail.get('RecType') == 3:
+                                        print("\n注文が期限切れになりました")
+                                        print("取引を一時停止します。Enterキーを押して再開...")
+                                        input()  # ユーザーの入力待ち
+                                        continue  # ループを継続
+                                    else:
+                                        print("決済が完了しました。次のループへ進みます。")
+                                        break  # 決済成功時は次のループへ
                             
                             # 買いポジションの決済条件判定
                             elif side == '2':  # 買いポジション
-                                if price_t2 < price_t1 and price_t0 < price_t1:
+                                if (price_t2 < price_t1 and price_t0 < price_t1 and price_t2 > buy_price and price_t1 > buy_price and price_t0 > buy_price):
                                     print("\n買いポジションの決済条件を検出")
                                     print(f"価格推移: {price_t2} < {price_t1} > {price_t0}")
-                                    # ioc_price = reverse_buy_exit_sell_order_price
-                                    ioc_price = position_price
+                                    # 現在の市場価格を取得
+                                    current_market_price = self.trading_data.fetch_current_price()
+                                    
+                                    # 約定価格と市場価格を比較して決済価格を決定
+                                    if buy_price == current_market_price:
+                                        ioc_price = round(current_market_price + 0.1, 1)
+                                        print(f"市場価格と約定価格が同じため、市場価格+0.1円で決済: {ioc_price}")
+                                    else:
+                                        ioc_price = buy_price
+                                        print(f"約定価格で決済: {ioc_price}")
+                                    
                                     response = self.exit_ioc_order(
                                         side="1",  # 売り注文で決済
                                         quantity=quantity,
                                         HoldID=execution_id,
                                         price=ioc_price
                                     )
-                                    if response is not None:
-                                        print("IOC指値決済完了 - 次の新規注文を入れます")
-                                    else:
-                                        print("IOC指値決済は失敗しましたが、次の新規注文に進みます")
                                     time.sleep(0.2)
-                                    break 
+                                    orders_history = self.get_orders_history(limit=1)
+                                    # print(orders_history[-1])
+                                    latest_order_ioc = orders_history[-1]
+                                    last_detail = latest_order_ioc['Details'][-1]
+                                    # RecType=3（期限切れ）の場合
+                                    if last_detail.get('RecType') == 3:
+                                        print("\n注文が期限切れになりました")
+                                        print("取引を一時停止します。Enterキーを押して再開...")
+                                        input()  # ユーザーの入力待ち
+                                        continue  # ループを継続
+                                    else:
+                                        print("決済が完了しました。次のループへ進みます。")
+                                        break  # 決済成功時は次のループへ
 
                     time.sleep(0.2)  # 短い間隔で価格チェック
 
                 except Exception as e:
                     self.logger.error(f"価格監視中にエラーが発生: {e}")
                     time.sleep(0.2)
+            
+ 
  
         
         
@@ -575,8 +634,8 @@ class OrderExecutor:
         if params is None:
             params = {
                 'product': 2,       # 0:すべて、1:現物、2:信用、3:先物、4:OP
-                'symbol': self.init.symbol,   
-                'addinfo': 'false'  # 追加情報の出力有無
+                'symbol': self.init.symbol   
+                # 'addinfo': 'false'  # 追加情報の出力有無
             }
 
         url = f"{API_BASE_URL}/positions"
@@ -790,9 +849,9 @@ class OrderExecutor:
             except Exception as read_err:
                 print(f"エラー詳細の取得中に問題発生: {read_err}")
             
-            print("\n送信しようとした注文内容:")
-            print(json.dumps(obj, indent=2, ensure_ascii=False))
-            print("================================\n")
+            # print("\n送信しようとした注文内容:")
+            # print(json.dumps(obj, indent=2, ensure_ascii=False))
+            # print("================================\n")
             return None
 
         except Exception as e:
@@ -860,6 +919,17 @@ class OrderExecutor:
         except urllib.error.HTTPError as e:
             print(f"  ステータスコード: {e.code}")
             print(f"  理由: {e.reason}")
+            try:
+                error_body = e.read().decode('utf-8')
+                error_details = json.loads(error_body)
+                print(f"  エラーの詳細:")
+                print(f"    コード: {error_details.get('Code', 'N/A')}")
+                print(f"    メッセージ: {error_details.get('Message', 'N/A')}")
+            except json.JSONDecodeError:
+                print(f"  エラーボディ: {error_body}")
+            except Exception as read_err:
+                print(f"  エラー詳細の取得中に問題が発生: {read_err}")
+
 
         except Exception as e:
             error_msg = f"IOC返済注文送信中にエラーが発生: {str(e)}"
